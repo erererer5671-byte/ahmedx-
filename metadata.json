@@ -1,0 +1,6 @@
+{
+  "name": "مهنة مدرب - Soccer Manager",
+  "description": "Football Coach Career Mode simulation featuring realistic matches, tactics, transfers, training, and league tables inspired by World Soccer Champs.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
