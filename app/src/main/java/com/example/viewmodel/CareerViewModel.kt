@@ -232,6 +232,9 @@ class CareerViewModel(application: Application) : AndroidViewModel(application) 
     private val _matchState = MutableStateFlow<MatchPlayState>(MatchPlayState.PreMatch)
     val matchState = _matchState.asStateFlow()
 
+    private val _isSkippingSeason = MutableStateFlow(false)
+    val isSkippingSeason = _isSkippingSeason.asStateFlow()
+
     init {
         // Observe career to update user squad, club, etc.
         viewModelScope.launch {
@@ -747,6 +750,164 @@ class CareerViewModel(application: Application) : AndroidViewModel(application) 
 
             // Sync players
             _userSquad.value = repository.getPlayersByClub(career.clubId)
+        }
+    }
+
+    fun skipEntireSeason() {
+        val uClub = userClub.value ?: return
+
+        viewModelScope.launch {
+            _isSkippingSeason.value = true
+            try {
+                // Loop to simulate all remaining weeks of the current season
+                while (true) {
+                    val career = repository.careerFlow.first() ?: break
+                    val currentWeek = career.week
+
+                    // Fetch the fixture for the current week
+                    val fixtures = repository.getFixturesByWeek(currentWeek)
+                    val userFixture = fixtures.firstOrNull {
+                        it.homeTeamId == career.clubId || it.awayTeamId == career.clubId
+                    } ?: break
+
+                    // 1. Simulate the user's match if not played
+                    if (!userFixture.isPlayed) {
+                        val oppId = if (userFixture.homeTeamId == career.clubId) userFixture.awayTeamId else userFixture.homeTeamId
+                        val oppClub = repository.getClubById(oppId) ?: break
+                        val uSquad = repository.getPlayersByClub(career.clubId)
+                        val oppSquad = repository.getPlayersByClub(oppId)
+
+                        val uRating = uSquad.map { it.rating }.average().toInt()
+                        val oppRating = oppSquad.map { it.rating }.average().toInt()
+
+                        val uDefending = uSquad.filter { it.position == "DEF" }.map { it.defending }.average().takeIf { !it.isNaN() }?.toInt() ?: 70
+                        val uEnergyAvg = uSquad.map { it.energy }.average().takeIf { !it.isNaN() }?.toInt() ?: 100
+
+                        val diff = uRating - oppRating
+
+                        var uGoalsBonus = 0
+                        var oppGoalsBonus = 0
+
+                        if (uDefending < 75) {
+                            oppGoalsBonus += 1
+                        }
+                        if (uEnergyAvg < 65) {
+                            oppGoalsBonus += 1
+                        }
+
+                        val uGoalsChance = (Random.nextInt(0, 4) + (diff / 6)).coerceIn(0, 5) + uGoalsBonus
+                        val oppGoalsChance = (Random.nextInt(0, 4) - (diff / 6)).coerceIn(0, 5) + oppGoalsBonus
+
+                        val updatedFixture = userFixture.copy(
+                            homeScore = if (userFixture.homeTeamId == uClub.id) uGoalsChance else oppGoalsChance,
+                            awayScore = if (userFixture.awayTeamId == uClub.id) uGoalsChance else oppGoalsChance,
+                            isPlayed = true
+                        )
+                        repository.updateFixture(updatedFixture)
+
+                        // Update tables
+                        repository.updateClub(
+                            updateClubStatsLocal(uClub, updatedFixture.homeScore!!, updatedFixture.awayScore!!)
+                        )
+                        repository.updateClub(
+                            updateClubStatsLocal(oppClub, updatedFixture.awayScore!!, updatedFixture.homeScore!!)
+                        )
+                    }
+
+                    // 2. Simulate other matches
+                    repository.simulateRestOfMatches(currentWeek, career.clubId)
+
+                    // 3. Squad fatigue
+                    val squad = repository.getPlayersByClub(career.clubId)
+                    for (p in squad) {
+                        val matchFatigue = if (p.position == "GK") 5 else Random.nextInt(10, 18)
+                        val newEnergy = (p.energy - matchFatigue).coerceAtLeast(15)
+                        repository.updatePlayer(p.copy(energy = newEnergy))
+                    }
+
+                    // 4. Apply scheduled training
+                    applyWeeklyTrainingSchedule(squad, career)
+
+                    // 5. Trigger random sell/loan list countdown
+                    triggerRandomSellOffers(career, squad)
+
+                    val allPlayers = dao.getPlayersFlow().first()
+                    for (p in allPlayers) {
+                        if (p.isOnLoan) {
+                            val weeksLeft = p.loanWeeksLeft - 1
+                            if (weeksLeft <= 0) {
+                                val returned = p.copy(
+                                    isOnLoan = false,
+                                    loanWeeksLeft = 0,
+                                    clubId = p.originalClubId,
+                                    onLoanList = false
+                                )
+                                repository.updatePlayer(returned)
+                            } else {
+                                val updated = p.copy(loanWeeksLeft = weeksLeft)
+                                repository.updatePlayer(updated)
+                            }
+                        }
+                    }
+
+                    // 6. Advance week or end season
+                    if (currentWeek < 18) {
+                        val updatedCareer = career.copy(week = currentWeek + 1)
+                        repository.updateCareer(updatedCareer)
+                    } else {
+                        // End of season! Reset standings, increase budget
+                        val rank = getClubsRank(uClub.id)
+                        val userPrize = (15_000_000L - (rank - 1) * 1_500_000L).coerceAtLeast(3_000_000L)
+
+                        val allClubs = repository.clubsFlow.first()
+                        for (c in allClubs) {
+                            val updatedC = c.copy(
+                                played = 0, wins = 0, draws = 0, losses = 0,
+                                goalsFor = 0, goalsAgainst = 0, points = 0
+                            )
+                            repository.updateClub(updatedC)
+                        }
+
+                        val updatedCareer = career.copy(
+                            week = 1,
+                            season = career.season + 1,
+                            budget = career.budget + userPrize
+                        )
+                        repository.updateCareer(updatedCareer)
+
+                        // Add championship news
+                        val championshipNews = NewsEntity(
+                            title = "Season ${career.season} Concluded (Simulated)!",
+                            titleAr = "انتهى الموسم رقم ${career.season} (تخطي الموسم)! 🏁",
+                            content = "The season has officially finished. Your club finished in Rank #$rank! You have received a payout of $${userPrize / 1_000_000}M.",
+                            contentAr = "انتهى الموسم الكروي بالكامل عبر المحاكاة السريعة. حقق فريقك المركز #$rank في الترتيب العام للدوري الممتاز! حصل النادي على ميزانية إضافية قيمتها $${userPrize / 1_000_000} مليون دولار للتطوير والاستعداد للموسم الجديد.",
+                            type = "Board"
+                        )
+                        repository.insertNews(championshipNews)
+
+                        // Add journal entry
+                        val seasonJournal = JournalEntity(
+                            season = career.season,
+                            week = 18,
+                            title = "Season Concluded via Quick Simulation",
+                            titleAr = "🏁 انتهاء الموسم رقم ${career.season} بالمحاكاة الكاملة",
+                            content = "Completed season skip.",
+                            contentAr = "تم تخطي وتسمية الموسم الكروي رقم ${career.season} بمحاكاة كاملة وتفصيلية، وحلّ الفريق في المركز #$rank بجدول الدوري التنافسي.",
+                            isAuto = true
+                        )
+                        repository.insertJournal(seasonJournal)
+
+                        break
+                    }
+                }
+
+                // Sync user squad
+                _userSquad.value = repository.getPlayersByClub(uClub.id)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            } finally {
+                _isSkippingSeason.value = false
+            }
         }
     }
 

@@ -30,6 +30,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.ui.window.Dialog
 import com.example.data.*
 import com.example.viewmodel.CareerViewModel
 import com.example.viewmodel.MatchPlayState
@@ -56,6 +57,46 @@ fun SoccerAppMainView(viewModel: CareerViewModel) {
     val trainingFeedback by viewModel.trainingFeedback.collectAsStateWithLifecycle()
     val journals by viewModel.journalsState.collectAsStateWithLifecycle()
     val loanedOutPlayers by viewModel.loanedOutPlayers.collectAsStateWithLifecycle()
+    val isSkippingSeason by viewModel.isSkippingSeason.collectAsStateWithLifecycle()
+
+    if (isSkippingSeason) {
+        Dialog(onDismissRequest = {}) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E252E)),
+                border = BorderStroke(1.dp, Color(0xFF38495C)),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    CircularProgressIndicator(
+                        color = Color(0xFFD1E4FF),
+                        modifier = Modifier.size(48.dp)
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = "جاري محاكاة وتخطي الموسم بالكامل... ⚽",
+                        color = Color.White,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "يتم محاكاة بقية مباريات الدوري، تطبيق التدريبات، وتحديث وضعيات اللاعبين والإعارات للانتقال فوراً للموسم المُقبل.",
+                        color = Color(0xFFC2C7CF),
+                        fontSize = 12.sp,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+        }
+    }
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -142,7 +183,8 @@ fun SoccerAppMainView(viewModel: CareerViewModel) {
                                 fixtures = fixtures,
                                 onStartMatch = { viewModel.startInteractiveMatch() },
                                 onQuickSim = { viewModel.quickSimulateMatch() },
-                                onAdvanceWeek = { viewModel.advanceWeek() }
+                                onAdvanceWeek = { viewModel.advanceWeek() },
+                                onSkipSeason = { viewModel.skipEntireSeason() }
                             )
                             1 -> SquadScreen(
                                 userClub = userClub,
@@ -385,9 +427,12 @@ fun HomeScreen(
     fixtures: List<FixtureEntity>,
     onStartMatch: () -> Unit,
     onQuickSim: () -> Unit,
-    onAdvanceWeek: () -> Unit
+    onAdvanceWeek: () -> Unit,
+    onSkipSeason: () -> Unit
 ) {
     if (userClub == null) return
+
+    var showSkipConfirmation by remember { mutableStateOf(false) }
 
     val currentWeekFixture = fixtures.firstOrNull {
         it.week == career.week && (it.homeTeamId == userClub.id || it.awayTeamId == userClub.id)
@@ -632,10 +677,88 @@ fun HomeScreen(
                                 )
                             }
                         }
+
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        Button(
+                            onClick = { showSkipConfirmation = true },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0x22FF9800),
+                                contentColor = Color(0xFFFFB74D)
+                            ),
+                            border = BorderStroke(1.dp, Color(0x66FF9800)),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(40.dp)
+                                .testTag("skip_season_btn")
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.PlayArrow,
+                                    contentDescription = null,
+                                    tint = Color(0xFFFFB74D),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "تخطي ومحاكاة الموسم بأكمله ⏩",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
                     } else {
                         Text(text = "موسم ناجح جداً! لقد أكملت مسابقتك كلياً.", color = Color.White, fontSize = 14.sp)
                     }
                 }
+            }
+        }
+
+        item {
+            // Dialogue rendering
+            if (showSkipConfirmation) {
+                AlertDialog(
+                    onDismissRequest = { showSkipConfirmation = false },
+                    title = {
+                        Text(
+                            text = "تخطي الموسم بأكمله؟ ⚠️",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                    },
+                    text = {
+                        Text(
+                            text = "سيقوم النظام بمحاكاة جميع الجولات المتبقية وتحديث ترتيب فريقك تلقائياً للعبور مباشرة للموسم القادم. لن تتمكن من التراجع عن هذه الخطوة.",
+                            fontSize = 13.sp,
+                            color = Color(0xFFC2C7CF)
+                        )
+                    },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                showSkipConfirmation = false
+                                onSkipSeason()
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFFE53935),
+                                contentColor = Color.White
+                            )
+                        ) {
+                            Text("نعم، تخطي الموسم ⏩", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showSkipConfirmation = false }) {
+                            Text("إلغاء", color = Color(0xFFC2C7CF), fontSize = 12.sp)
+                        }
+                    },
+                    containerColor = Color(0xFF1E252E)
+                )
             }
         }
 
