@@ -41,6 +41,72 @@ import com.example.viewmodel.MatchOption
 import com.example.viewmodel.EventType
 import kotlin.random.Random
 
+data class ThemePalette(
+    val background: Color,
+    val headerBg: Color,
+    val cardBg: Color,
+    val cardSecBg: Color,
+    val accent: Color,
+    val onAccent: Color,
+    val textGray: Color,
+    val textWhite: Color,
+    val accentBorder: Color,
+    val glow: Color
+)
+
+fun getThemePalette(themeName: String): ThemePalette {
+    return when (themeName) {
+        "Emerald" -> ThemePalette(
+            background = Color(0xFF0F1E15),
+            headerBg = Color(0xFF0B2416),
+            cardBg = Color(0xFF143021),
+            cardSecBg = Color(0xFF1F4C35),
+            accent = Color(0xFFFFC107),
+            onAccent = Color(0xFF1B0000),
+            textGray = Color(0xFFA5D6A7),
+            textWhite = Color(0xFFE8F5E9),
+            accentBorder = Color(0xFF2E7D32),
+            glow = Color(0xFF4CAF50)
+        )
+        "Cyberpunk" -> ThemePalette(
+            background = Color(0xFF0D0219),
+            headerBg = Color(0xFF07000F),
+            cardBg = Color(0xFF180A2D),
+            cardSecBg = Color(0xFF29104A),
+            accent = Color(0xFF00E5FF),
+            onAccent = Color(0xFF01000A),
+            textGray = Color(0xFFE1BEE7),
+            textWhite = Color(0xFFFAFAFA),
+            accentBorder = Color(0xFF6A1B9A),
+            glow = Color(0xFFD200DE)
+        )
+        "Cosmic" -> ThemePalette(
+            background = Color(0xFF05050A),
+            headerBg = Color(0xFF121216),
+            cardBg = Color(0xFF1F1F24),
+            cardSecBg = Color(0xFF2C2D35),
+            accent = Color(0xFFFFB300),
+            onAccent = Color(0xFF211300),
+            textGray = Color(0xFFCFD8DC),
+            textWhite = Color(0xFFFFFFFF),
+            accentBorder = Color(0xFFF57C00),
+            glow = Color(0xFFFFD54F)
+        )
+        else -> ThemePalette(
+            background = Color(0xFF111318),
+            headerBg = Color(0xFF1A1C1E),
+            cardBg = Color(0xFF1C1B1F),
+            cardSecBg = Color(0xFF2D3135),
+            accent = Color(0xFFD1E4FF),
+            onAccent = Color(0xFF003355),
+            textGray = Color(0xFFC2C7CF),
+            textWhite = Color(0xFFE2E2E6),
+            accentBorder = Color(0xFF43474E),
+            glow = Color(0xFF2196F3)
+        )
+    }
+}
+
 @Composable
 fun SoccerAppMainView(viewModel: CareerViewModel) {
     val activeSlotId by viewModel.activeSlotId.collectAsStateWithLifecycle()
@@ -140,12 +206,13 @@ fun SoccerAppMainView(viewModel: CareerViewModel) {
                 )
             } else {
                 // Main Coach Career dashboard
+                val palette = getThemePalette(career?.selectedTheme ?: "Classic")
                 Scaffold(
                     bottomBar = {
-                        val sophAccent = Color(0xFFD1E4FF)
-                        val sophGray = Color(0xFFC2C7CF)
-                        val sophHeaderBg = Color(0xFF1A1C1E)
-                        val sophPill = Color(0xFF38495C)
+                        val sophAccent = palette.accent
+                        val sophGray = palette.textGray
+                        val sophHeaderBg = palette.headerBg
+                        val sophPill = palette.cardSecBg
                         NavigationBar(
                             containerColor = sophHeaderBg,
                             tonalElevation = 8.dp,
@@ -195,7 +262,7 @@ fun SoccerAppMainView(viewModel: CareerViewModel) {
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(innerPadding)
-                            .background(Color(0xFF111318))
+                            .background(palette.background)
                     ) {
                         when (activeTab) {
                             0 -> HomeScreen(
@@ -212,7 +279,12 @@ fun SoccerAppMainView(viewModel: CareerViewModel) {
                                 onSkipSeason = { viewModel.skipEntireSeason() },
                                 onSelectSponsor = { viewModel.chooseSponsor(it) },
                                 onResign = { viewModel.resignFromCurrentClub() },
-                                onExitSaves = { viewModel.exitSaveSlot() }
+                                onExitSaves = { viewModel.exitSaveSlot() },
+                                onPurchaseTheme = { name, cost -> viewModel.purchaseTheme(name, cost) },
+                                onSelectTheme = { name -> viewModel.selectTheme(name) },
+                                onClaimReward = { idx -> viewModel.claimDailyTaskReward(idx) },
+                                onResetMissions = { viewModel.resetDailyTasks() },
+                                onPlaySound = { tone -> viewModel.triggerTone(tone) }
                             )
                             1 -> SquadScreen(
                                 userClub = userClub,
@@ -724,10 +796,16 @@ fun HomeScreen(
     onSkipSeason: () -> Unit,
     onSelectSponsor: (String) -> Unit,
     onResign: () -> Unit,
-    onExitSaves: () -> Unit
+    onExitSaves: () -> Unit,
+    onPurchaseTheme: (String, Int) -> Unit,
+    onSelectTheme: (String) -> Unit,
+    onClaimReward: (Int) -> Unit,
+    onResetMissions: () -> Unit,
+    onPlaySound: (String) -> Unit
 ) {
     if (userClub == null) return
 
+    val palette = getThemePalette(career.selectedTheme)
     var showSkipConfirmation by remember { mutableStateOf(false) }
 
     val currentWeekFixture = fixtures.firstOrNull {
@@ -742,86 +820,537 @@ fun HomeScreen(
             .padding(16.dp)
     ) {
         item {
-            // Adaptive Profile Card
+            // Adaptive Profile Card under active Theme
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(bottom = 16.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E252E)),
-                border = BorderStroke(1.dp, Color(0xFF37474F)),
+                colors = CardDefaults.cardColors(containerColor = palette.cardBg),
+                border = BorderStroke(1.2.dp, palette.accentBorder),
                 shape = RoundedCornerShape(16.dp)
             ) {
-                Row(
-                    modifier = Modifier.padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    val initials = if (career.managerName.isNotBlank()) {
-                        career.managerName.split(" ").filter { it.isNotBlank() }.map { it.take(1) }.joinToString("").take(2).uppercase()
-                    } else "PL"
-
-                    Box(
-                        modifier = Modifier
-                            .size(54.dp)
-                            .background(Color(0xFF90CAF9), CircleShape)
-                            .border(1.5.dp, Color(0xFF1565C0), CircleShape),
-                        contentAlignment = Alignment.Center
+                Column {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = initials,
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF0D47A1)
-                        )
-                    }
+                        val initials = if (career.managerName.isNotBlank()) {
+                            career.managerName.split(" ").filter { it.isNotBlank() }.map { it.take(1) }.joinToString("").take(2).uppercase()
+                        } else "PL"
 
-                    Spacer(modifier = Modifier.width(16.dp))
-
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = career.managerName,
-                            fontSize = 17.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White
-                        )
-                        Text(
-                            text = if (career.careerMode == "Player") "لاعب نادي ${userClub.nameAr} (${career.playerPosition}) ⚽" else "مدرب نادي ${userClub.nameAr} 👑",
-                            fontSize = 12.sp,
-                            color = Color(0xFFB0BEC5),
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-
-                    Column(
-                        horizontalAlignment = Alignment.End,
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        // Budget / Salary Capsule
                         Box(
                             modifier = Modifier
-                                .background(Color(0xFF0D47A1), RoundedCornerShape(12.dp))
-                                .border(1.dp, Color(0xFF1976D2), RoundedCornerShape(12.dp))
-                                .padding(horizontal = 10.dp, vertical = 4.dp)
+                                .size(54.dp)
+                                .background(palette.accent, CircleShape)
+                                .border(1.5.dp, palette.accentBorder, CircleShape),
+                            contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                text = if (career.careerMode == "Player") "راتب: $25K" else "$${career.budget / 1_000_000}M",
-                                fontSize = 12.sp,
+                                text = initials,
+                                fontSize = 18.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Color.White
+                                color = palette.onAccent
                             )
                         }
 
-                        // Season Badge
+                        Spacer(modifier = Modifier.width(16.dp))
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = career.managerName,
+                                fontSize = 17.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = palette.textWhite
+                            )
+                            Text(
+                                text = if (career.careerMode == "Player") "لاعب نادي ${userClub.nameAr} (${career.playerPosition}) ⚽" else "مدرب نادي ${userClub.nameAr} 👑",
+                                fontSize = 12.sp,
+                                color = palette.textGray,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+
+                        Column(
+                            horizontalAlignment = Alignment.End,
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            // Budget / Salary Capsule
+                            Box(
+                                modifier = Modifier
+                                    .background(palette.accent, RoundedCornerShape(12.dp))
+                                    .border(1.dp, palette.accentBorder, RoundedCornerShape(12.dp))
+                                    .padding(horizontal = 10.dp, vertical = 4.dp)
+                            ) {
+                                Text(
+                                    text = if (career.careerMode == "Player") "راتب: $25K" else "$${career.budget / 1_000_000}M",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = palette.onAccent
+                                )
+                            }
+
+                            // Season Badge
+                            Box(
+                                modifier = Modifier
+                                    .background(palette.cardSecBg, RoundedCornerShape(8.dp))
+                                    .padding(horizontal = 8.dp, vertical = 2.dp)
+                            ) {
+                                Text(
+                                    text = "موسم ${career.season}",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = palette.textWhite
+                                )
+                            }
+                        }
+                    }
+
+                    // Haptic & Sound-integrated Coin and XP bar
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(palette.cardSecBg)
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("🪙 الكاش الشخصي: ", fontSize = 11.sp, color = palette.textGray)
+                            Text("${career.managerCoins} عملة", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFFFFD54F))
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("⭐ مستوى الإدارة: ", fontSize = 11.sp, color = palette.textGray)
+                            Text("Lv.${(career.managerXp / 1000) + 1} (${career.managerXp % 1000}/1000 XP)", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = palette.glow)
+                        }
+                    }
+                }
+            }
+        }
+
+        item {
+            // 1. Daily Missions Card
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 16.dp),
+                colors = CardDefaults.cardColors(containerColor = palette.cardBg),
+                border = BorderStroke(1.dp, palette.accentBorder),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Box(
                             modifier = Modifier
-                                .background(Color(0xFF455A64), RoundedCornerShape(8.dp))
-                                .padding(horizontal = 8.dp, vertical = 2.dp)
+                                .background(palette.accent, RoundedCornerShape(6.dp))
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
                         ) {
                             Text(
-                                text = "موسم ${career.season}",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = Color.White
+                                text = "المهام اليومية / Daily Missions",
+                                color = palette.onAccent,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold
                             )
+                        }
+                        
+                        Text(
+                            text = "تحديات الإدارة اليومية 🎯",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = palette.accent
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Mission 1: Play Match
+                    val task1Progress = career.dailyTask1Progress.toFloat() / career.dailyTask1Max.toFloat()
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(palette.cardSecBg, RoundedCornerShape(8.dp))
+                            .padding(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                "1. خوض اللقاءات (Play Match)",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = palette.textWhite
+                            )
+                            Text(
+                                "العب مباراة واحدة في الدوري الممتع",
+                                fontSize = 10.sp,
+                                color = palette.textGray
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            LinearProgressIndicator(
+                                progress = task1Progress,
+                                modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
+                                color = palette.glow,
+                                trackColor = palette.background
+                            )
+                            Text(
+                                "${career.dailyTask1Progress}/${career.dailyTask1Max} مكتمل",
+                                fontSize = 9.sp,
+                                color = palette.textGray,
+                                modifier = Modifier.padding(top = 2.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("🎁 15🪙 + 150⭐", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color(0xFFFFD54F))
+                            Spacer(modifier = Modifier.height(4.dp))
+                            if (career.dailyTask1Claimed) {
+                                Button(
+                                    onClick = {},
+                                    enabled = false,
+                                    colors = ButtonDefaults.buttonColors(disabledContainerColor = Color.DarkGray),
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                    shape = RoundedCornerShape(6.dp)
+                                ) {
+                                    Text("تم ✅", fontSize = 9.sp)
+                                }
+                            } else if (career.dailyTask1Completed) {
+                                Button(
+                                    onClick = { 
+                                        onPlaySound("coin")
+                                        onClaimReward(1) 
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = palette.accent),
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                    shape = RoundedCornerShape(6.dp)
+                                ) {
+                                    Text("استلام 🎁", fontSize = 9.sp, color = palette.onAccent, fontWeight = FontWeight.Bold)
+                                }
+                            } else {
+                                Button(
+                                    onClick = {},
+                                    enabled = false,
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                    shape = RoundedCornerShape(6.dp)
+                                ) {
+                                    Text("⏳ نشط", fontSize = 9.sp)
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Mission 2: Score Goals
+                    val task2Progress = (career.dailyTask2Progress.toFloat() / career.dailyTask2Max.toFloat()).coerceAtMost(1f)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(palette.cardSecBg, RoundedCornerShape(8.dp))
+                            .padding(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                "2. العاصفة التكتيكية (Score Goals)",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = palette.textWhite
+                            )
+                            Text(
+                                "سجل هدفين في الدوري لتدمير المنافسين",
+                                fontSize = 10.sp,
+                                color = palette.textGray
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            LinearProgressIndicator(
+                                progress = task2Progress,
+                                modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
+                                color = palette.glow,
+                                trackColor = palette.background
+                            )
+                            Text(
+                                "${career.dailyTask2Progress}/${career.dailyTask2Max} أهداف",
+                                fontSize = 9.sp,
+                                color = palette.textGray,
+                                modifier = Modifier.padding(top = 2.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("🎁 20🪙 + 200⭐", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color(0xFFFFD54F))
+                            Spacer(modifier = Modifier.height(4.dp))
+                            if (career.dailyTask2Claimed) {
+                                Button(
+                                    onClick = {},
+                                    enabled = false,
+                                    colors = ButtonDefaults.buttonColors(disabledContainerColor = Color.DarkGray),
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                    shape = RoundedCornerShape(6.dp)
+                                ) {
+                                    Text("تم ✅", fontSize = 9.sp)
+                                }
+                            } else if (career.dailyTask2Completed) {
+                                Button(
+                                    onClick = { 
+                                        onPlaySound("coin")
+                                        onClaimReward(2) 
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = palette.accent),
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                    shape = RoundedCornerShape(6.dp)
+                                ) {
+                                    Text("استلام 🎁", fontSize = 9.sp, color = palette.onAccent, fontWeight = FontWeight.Bold)
+                                }
+                            } else {
+                                Button(
+                                    onClick = {},
+                                    enabled = false,
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                    shape = RoundedCornerShape(6.dp)
+                                ) {
+                                    Text("⏳ نشط", fontSize = 9.sp)
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Mission 3: Player Transfer Action
+                    val task3Progress = career.dailyTask3Progress.toFloat() / career.dailyTask3Max.toFloat()
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(palette.cardSecBg, RoundedCornerShape(8.dp))
+                            .padding(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                "3. حسم الصفقات (Buy/Sell Player)",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = palette.textWhite
+                            )
+                            Text(
+                                "ابرم صفقة بيع أو شراء واحدة لتقوية النادي",
+                                fontSize = 10.sp,
+                                color = palette.textGray
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            LinearProgressIndicator(
+                                progress = task3Progress,
+                                modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
+                                color = palette.glow,
+                                trackColor = palette.background
+                            )
+                            Text(
+                                "${career.dailyTask3Progress}/${career.dailyTask3Max} صفقات",
+                                fontSize = 9.sp,
+                                color = palette.textGray,
+                                modifier = Modifier.padding(top = 2.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("🎁 25🪙 + 250⭐", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color(0xFFFFD54F))
+                            Spacer(modifier = Modifier.height(4.dp))
+                            if (career.dailyTask3Claimed) {
+                                Button(
+                                    onClick = {},
+                                    enabled = false,
+                                    colors = ButtonDefaults.buttonColors(disabledContainerColor = Color.DarkGray),
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                    shape = RoundedCornerShape(6.dp)
+                                ) {
+                                    Text("تم ✅", fontSize = 9.sp)
+                                }
+                            } else if (career.dailyTask3Completed) {
+                                Button(
+                                    onClick = { 
+                                        onPlaySound("coin")
+                                        onClaimReward(3) 
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = palette.accent),
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                    shape = RoundedCornerShape(6.dp)
+                                ) {
+                                    Text("استلام 🎁", fontSize = 9.sp, color = palette.onAccent, fontWeight = FontWeight.Bold)
+                                }
+                            } else {
+                                Button(
+                                    onClick = {},
+                                    enabled = false,
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                    shape = RoundedCornerShape(6.dp)
+                                ) {
+                                    Text("⏳ نشط", fontSize = 9.sp)
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Infinite replayability reset button 
+                    Button(
+                        onClick = { 
+                            onPlaySound("click")
+                            onResetMissions() 
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = palette.cardSecBg),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                        border = BorderStroke(1.dp, palette.accentBorder)
+                    ) {
+                        Icon(Icons.Default.Refresh, contentDescription = null, tint = palette.accent, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("توليد وتحديث قائمة المهام اليومية (لعب لانهائي) 🔄", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = palette.accent)
+                    }
+                }
+            }
+        }
+
+        item {
+            // 2. UI Customization Themes Store Card
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 16.dp),
+                colors = CardDefaults.cardColors(containerColor = palette.cardBg),
+                border = BorderStroke(1.dp, palette.accentBorder),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .background(palette.accent, RoundedCornerShape(6.dp))
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Text(
+                                text = "تخصيص اللعبة / Dynamic Themes Shop",
+                                color = palette.onAccent,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        
+                        Text(
+                            text = "متجر الثيمات واجهة اللعبة 🎨",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = palette.accent
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "استلم كاش الإدارة من التحديات والمباريات لفتح واجهات ألوان ساحرة ونادرة تناسب هوية ناديك المفضل!",
+                        fontSize = 10.sp,
+                        color = palette.textGray,
+                        textAlign = TextAlign.Right,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    val unlockedList = career.unlockedThemes.split(",")
+
+                    // Vertical/Horizontal styled Shop Row
+                    val allThemes = listOf(
+                        Triple("Classic", "الأزرق الكلاسيكي Classic 🌊", 0),
+                        Triple("Emerald", "الزمردي الملكي Royal Emerald 💚", 25),
+                        Triple("Cyberpunk", "سايبربانك نيون Cyber Neon ⚡", 40),
+                        Triple("Cosmic", "الذهبي الكوني Cosmic Luxury 👑", 60)
+                    )
+
+                    allThemes.forEach { (themeId, label, price) ->
+                        val isUnlocked = unlockedList.contains(themeId) || price == 0
+                        val isCurrent = career.selectedTheme == themeId
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 8.dp)
+                                .background(
+                                    if (isCurrent) palette.cardSecBg else Color.Transparent, 
+                                    RoundedCornerShape(8.dp)
+                                )
+                                .border(
+                                    if (isCurrent) BorderStroke(1.2.dp, palette.accent) else BorderStroke(0.5.dp, Color.DarkGray),
+                                    RoundedCornerShape(8.dp)
+                                )
+                                .padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(10.dp)
+                                        .background(
+                                            when (themeId) {
+                                                "Emerald" -> Color(0xFF4CAF50)
+                                                "Cyberpunk" -> Color(0xFF00E5FF)
+                                                "Cosmic" -> Color(0xFFFFB300)
+                                                else -> Color(0xFF2196F3)
+                                            },
+                                            CircleShape
+                                        )
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = label,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = palette.textWhite
+                                )
+                            }
+
+                            if (isCurrent) {
+                                Box(
+                                    modifier = Modifier
+                                        .background(palette.accent, RoundedCornerShape(6.dp))
+                                        .padding(horizontal = 8.dp, vertical = 2.dp)
+                                ) {
+                                    Text("مفعّل حالياً 🪐", fontSize = 10.sp, color = palette.onAccent, fontWeight = FontWeight.Bold)
+                                }
+                            } else if (isUnlocked) {
+                                Button(
+                                    onClick = { 
+                                        onPlaySound("click")
+                                        onSelectTheme(themeId) 
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color.DarkGray),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                                    shape = RoundedCornerShape(6.dp)
+                                ) {
+                                    Text("تطبيق الثيم 🎨", fontSize = 10.sp, color = Color.White)
+                                }
+                            } else {
+                                Button(
+                                    onClick = { 
+                                        if (career.managerCoins >= price) {
+                                            onPlaySound("coin")
+                                            onPurchaseTheme(themeId, price)
+                                        } else {
+                                            onPlaySound("click") // failure feedback
+                                        }
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = palette.accent),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                                    shape = RoundedCornerShape(6.dp)
+                                ) {
+                                    Text("شراء بـ $price 🪙", fontSize = 10.sp, color = palette.onAccent, fontWeight = FontWeight.Bold)
+                                }
+                            }
                         }
                     }
                 }

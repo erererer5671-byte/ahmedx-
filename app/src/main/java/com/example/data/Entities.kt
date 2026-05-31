@@ -27,7 +27,23 @@ data class CareerEntity(
     val scoutingMissionActive: Boolean = false, // Current Active status
     val scoutingMissionPosition: String = "", // Target scouting position
     val scoutingWeeksPassed: Int = 0, // Counting duration of Scouting
-    val selectedSponsor: String = "None" // Persistent active jersey sponsor
+    val selectedSponsor: String = "None", // Persistent active jersey sponsor
+    val managerCoins: Int = 100, // In-game currency for customization
+    val managerXp: Int = 0, // Manager XP level tracking
+    val selectedTheme: String = "Classic", // Active customization theme
+    val unlockedThemes: String = "Classic", // Comma-separated list of unlocked themes, e.g. "Classic,Emerald"
+    val dailyTask1Progress: Int = 0, // Play 1 Match (0/1)
+    val dailyTask1Max: Int = 1,
+    val dailyTask1Completed: Boolean = false,
+    val dailyTask1Claimed: Boolean = false,
+    val dailyTask2Progress: Int = 0, // Score 2 goals (0/2)
+    val dailyTask2Max: Int = 2,
+    val dailyTask2Completed: Boolean = false,
+    val dailyTask2Claimed: Boolean = false,
+    val dailyTask3Progress: Int = 0, // Buy or Sell Player (0/1)
+    val dailyTask3Max: Int = 1,
+    val dailyTask3Completed: Boolean = false,
+    val dailyTask3Claimed: Boolean = false
 )
 
 @Entity(tableName = "clubs")

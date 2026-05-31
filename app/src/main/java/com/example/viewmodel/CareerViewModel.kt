@@ -611,6 +611,8 @@ class CareerViewModel(application: Application) : AndroidViewModel(application) 
             if (success) {
                 // Refresh squad
                 _userSquad.value = repository.getPlayersByClub(career.clubId)
+                handleTransferTaskProgress()
+                triggerTone("coin")
             }
         }
     }
@@ -1357,6 +1359,8 @@ class CareerViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             repository.sellPlayerToAI(player, uClub, career)
             _userSquad.value = repository.getPlayersByClub(career.clubId)
+            handleTransferTaskProgress()
+            triggerTone("coin")
         }
     }
 
@@ -1529,6 +1533,40 @@ class CareerViewModel(application: Application) : AndroidViewModel(application) 
                 val scorer = oppScorers.randomOrNull()?.name ?: "Striker"
                 scorersList.add("⚽ ${oppClub.nameAr}: $scorer")
             }
+
+            val uGoals = if (updatedFixture.homeTeamId == uClub.id) updatedFixture.homeScore!! else updatedFixture.awayScore!!
+            val oppGoals = if (updatedFixture.homeTeamId == uClub.id) updatedFixture.awayScore!! else updatedFixture.homeScore!!
+            
+            val coinsEarned = when {
+                uGoals > oppGoals -> 10 + uGoals
+                uGoals == oppGoals -> 5 + uGoals
+                else -> 2 + uGoals
+            }
+            val xpEarned = when {
+                uGoals > oppGoals -> 100
+                uGoals == oppGoals -> 50
+                else -> 20
+            }
+            val soundType = if (uGoals >= oppGoals) "win" else "loss"
+            triggerTone(soundType)
+
+            val dt1Prog = (career.dailyTask1Progress + 1).coerceAtMost(career.dailyTask1Max)
+            val dt1Comp = dt1Prog >= career.dailyTask1Max
+            val dt2Prog = (career.dailyTask2Progress + uGoals).coerceAtMost(career.dailyTask2Max)
+            val dt2Comp = dt2Prog >= career.dailyTask2Max
+
+            val updatedCareer = career.copy(
+                managerCoins = career.managerCoins + coinsEarned,
+                managerXp = career.managerXp + xpEarned,
+                dailyTask1Progress = dt1Prog,
+                dailyTask1Completed = dt1Comp,
+                dailyTask2Progress = dt2Prog,
+                dailyTask2Completed = dt2Comp
+            )
+            repository.updateCareer(updatedCareer)
+
+            scorersList.add("💰 مكافأة الإدارة: +$coinsEarned عملة ذهبية 🪙")
+            scorersList.add("⭐ نقاط الخبرة المكتسبة: +$xpEarned خبرة")
 
             _matchState.value = MatchPlayState.PostMatch(
                 homeScore = updatedFixture.homeScore!!,
@@ -1839,10 +1877,48 @@ class CareerViewModel(application: Application) : AndroidViewModel(application) 
 
         _matchFixture.value = updatedFixture
 
+        val uGoals = if (isUserHome) finalHScore else finalAScore
+        val oppGoals = if (isUserHome) finalAScore else finalHScore
+        
+        val coinsEarned = when {
+            uGoals > oppGoals -> 10 + uGoals
+            uGoals == oppGoals -> 5 + uGoals
+            else -> 2 + uGoals
+        }
+        val xpEarned = when {
+            uGoals > oppGoals -> 100
+            uGoals == oppGoals -> 50
+            else -> 20
+        }
+        val soundType = if (uGoals >= oppGoals) "win" else "loss"
+        triggerTone(soundType)
+
+        val career = careerState.value
+        if (career != null) {
+            val dt1Prog = (career.dailyTask1Progress + 1).coerceAtMost(career.dailyTask1Max)
+            val dt1Comp = dt1Prog >= career.dailyTask1Max
+            val dt2Prog = (career.dailyTask2Progress + uGoals).coerceAtMost(career.dailyTask2Max)
+            val dt2Comp = dt2Prog >= career.dailyTask2Max
+
+            val updatedCareer = career.copy(
+                managerCoins = career.managerCoins + coinsEarned,
+                managerXp = career.managerXp + xpEarned,
+                dailyTask1Progress = dt1Prog,
+                dailyTask1Completed = dt1Comp,
+                dailyTask2Progress = dt2Prog,
+                dailyTask2Completed = dt2Comp
+            )
+            repository.updateCareer(updatedCareer)
+        }
+
         _matchState.value = MatchPlayState.PostMatch(
             homeScore = finalHScore,
             awayScore = finalAScore,
-            scorers = listOf("🏁 انتهت المباراة الحماسية بنتيجة $finalHScore - $finalAScore")
+            scorers = listOf(
+                "🏁 انتهت المباراة الحماسية بنتيجة $finalHScore - $finalAScore",
+                "💰 مكافأة الإدارة: +$coinsEarned عملة ذهبية 🪙",
+                "⭐ نقاط الخبرة المكتسبة: +$xpEarned خبرة"
+            )
         )
     }
 
@@ -2112,6 +2188,196 @@ class CareerViewModel(application: Application) : AndroidViewModel(application) 
                 type = "Board"
             )
             repository.insertNews(joinNews)
+        }
+    }
+
+    // --- MODERN CUSTOMIZATION & DAILY MISSION SYSTEM ---
+
+    // Play synthetic audio effect
+    fun triggerTone(type: String) {
+        when (type) {
+            "click" -> playSynthSound(440.0, 60)
+            "coin" -> {
+                // Short double beep
+                playSynthSound(523.25, 70)
+                viewModelScope.launch {
+                    kotlinx.coroutines.delay(80)
+                    playSynthSound(659.25, 120)
+                }
+            }
+            "win" -> {
+                viewModelScope.launch {
+                    playSynthSound(261.63, 100)
+                    kotlinx.coroutines.delay(110)
+                    playSynthSound(329.63, 100)
+                    kotlinx.coroutines.delay(110)
+                    playSynthSound(392.00, 100)
+                    kotlinx.coroutines.delay(110)
+                    playSynthSound(523.25, 250)
+                }
+            }
+            "loss" -> {
+                viewModelScope.launch {
+                    playSynthSound(392.00, 120)
+                    kotlinx.coroutines.delay(130)
+                    playSynthSound(311.13, 120)
+                    kotlinx.coroutines.delay(130)
+                    playSynthSound(220.00, 300)
+                }
+            }
+        }
+    }
+
+    private fun playSynthSound(frequency: Double, durationMs: Int) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                val sampleRate = 8000
+                val numSamples = (durationMs * sampleRate / 1000)
+                val sample = DoubleArray(numSamples)
+                val generatedSnd = ByteArray(2 * numSamples)
+                for (i in 0 until numSamples) {
+                    sample[i] = Math.sin(2.0 * Math.PI * i / (sampleRate / frequency))
+                }
+                var idx = 0
+                for (i in 0 until numSamples) {
+                    val valShort = (sample[i] * 32767).toInt().toShort()
+                    generatedSnd[idx++] = (valShort.toInt() and 0x00ff).toByte()
+                    generatedSnd[idx++] = ((valShort.toInt() and 0xff00) ushr 8).toByte()
+                }
+                
+                val audioTrack = android.media.AudioTrack(
+                    android.media.AudioManager.STREAM_MUSIC,
+                    sampleRate,
+                    android.media.AudioFormat.CHANNEL_OUT_MONO,
+                    android.media.AudioFormat.ENCODING_PCM_16BIT,
+                    generatedSnd.size,
+                    android.media.AudioTrack.MODE_STATIC
+                )
+                audioTrack.write(generatedSnd, 0, generatedSnd.size)
+                audioTrack.play()
+                kotlinx.coroutines.delay(durationMs.toLong() + 30)
+                audioTrack.release()
+            } catch (e: Exception) {
+                // Fallback if needed
+            }
+        }
+    }
+
+    // Purchase / Unlock a Theme with coins
+    fun purchaseTheme(themeName: String, cost: Int) {
+        val career = careerState.value ?: return
+        if (career.managerCoins < cost) return
+        
+        viewModelScope.launch {
+            val currentUnlocked = career.unlockedThemes.split(",")
+            if (!currentUnlocked.contains(themeName)) {
+                val updatedUnlocked = career.unlockedThemes + ",$themeName"
+                val updatedCareer = career.copy(
+                    managerCoins = career.managerCoins - cost,
+                    unlockedThemes = updatedUnlocked,
+                    selectedTheme = themeName
+                )
+                repository.updateCareer(updatedCareer)
+                triggerTone("coin")
+            }
+        }
+    }
+
+    // Select an unlocked theme
+    fun selectTheme(themeName: String) {
+        val career = careerState.value ?: return
+        viewModelScope.launch {
+            val currentUnlocked = career.unlockedThemes.split(",")
+            if (currentUnlocked.contains(themeName)) {
+                val updatedCareer = career.copy(selectedTheme = themeName)
+                repository.updateCareer(updatedCareer)
+                triggerTone("click")
+            }
+        }
+    }
+
+    // Progress transfer-related daily task
+    fun handleTransferTaskProgress() {
+        val career = careerState.value ?: return
+        viewModelScope.launch {
+            val dt3Prog = (career.dailyTask3Progress + 1).coerceAtMost(career.dailyTask3Max)
+            val dt3Comp = dt3Prog >= career.dailyTask3Max
+            val updatedCareer = career.copy(
+                dailyTask3Progress = dt3Prog,
+                dailyTask3Completed = dt3Comp
+            )
+            repository.updateCareer(updatedCareer)
+        }
+    }
+
+    // Claim awards for a completed daily task
+    fun claimDailyTaskReward(taskIndex: Int) {
+        val career = careerState.value ?: return
+        viewModelScope.launch {
+            var coinsReward = 0
+            var xpReward = 0
+            var updatedCareer = career
+
+            when (taskIndex) {
+                1 -> {
+                    if (career.dailyTask1Completed && !career.dailyTask1Claimed) {
+                        coinsReward = 15
+                        xpReward = 150
+                        updatedCareer = career.copy(
+                            managerCoins = career.managerCoins + coinsReward,
+                            managerXp = career.managerXp + xpReward,
+                            dailyTask1Claimed = true
+                        )
+                    }
+                }
+                2 -> {
+                    if (career.dailyTask2Completed && !career.dailyTask2Claimed) {
+                        coinsReward = 20
+                        xpReward = 200
+                        updatedCareer = career.copy(
+                            managerCoins = career.managerCoins + coinsReward,
+                            managerXp = career.managerXp + xpReward,
+                            dailyTask2Claimed = true
+                        )
+                    }
+                }
+                3 -> {
+                    if (career.dailyTask3Completed && !career.dailyTask3Claimed) {
+                        coinsReward = 25
+                        xpReward = 250
+                        updatedCareer = career.copy(
+                            managerCoins = career.managerCoins + coinsReward,
+                            managerXp = career.managerXp + xpReward,
+                            dailyTask3Claimed = true
+                        )
+                    }
+                }
+            }
+
+            if (coinsReward > 0) {
+                repository.updateCareer(updatedCareer)
+                triggerTone("coin")
+            }
+        }
+    }
+
+    // Reset daily tasks to play again & generate infinite content!
+    fun resetDailyTasks() {
+        val career = careerState.value ?: return
+        viewModelScope.launch {
+            val updatedCareer = career.copy(
+                dailyTask1Progress = 0,
+                dailyTask1Completed = false,
+                dailyTask1Claimed = false,
+                dailyTask2Progress = 0,
+                dailyTask2Completed = false,
+                dailyTask2Claimed = false,
+                dailyTask3Progress = 0,
+                dailyTask3Completed = false,
+                dailyTask3Claimed = false
+            )
+            repository.updateCareer(updatedCareer)
+            triggerTone("click")
         }
     }
 }
