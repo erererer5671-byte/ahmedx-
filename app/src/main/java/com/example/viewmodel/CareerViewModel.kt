@@ -8,70 +8,349 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlin.random.Random
 
+import kotlinx.coroutines.Job
+import androidx.room.Room
+
+data class SlotInfo(
+    val slotId: Int,
+    val hasData: Boolean,
+    val managerName: String = "",
+    val clubName: String = "",
+    val clubNameAr: String = "",
+    val league: String = "",
+    val season: Int = 1,
+    val week: Int = 1
+)
+
+data class ClubJobOffer(
+    val clubId: Int,
+    val clubName: String,
+    val clubNameAr: String,
+    val budget: Long,
+    val league: String,
+    val primaryColor: Long,
+    val reputation: Int,
+    val contractWage: Long
+)
+
 class CareerViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val db = AppDatabase.getDatabase(application)
-    val dao = db.careerDao()
-    val repository = CareerRepository(dao)
+    private val fallbackDb = AppDatabase.getDatabase(application)
+    private val fallbackDao = fallbackDb.careerDao()
+    private val fallbackRepository = CareerRepository(fallbackDao)
 
-    // Flow states
-    val careerState: StateFlow<CareerEntity?> = repository.careerFlow.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5000),
-        initialValue = null
-    )
+    // Dynamic Database slot tracking
+    private val _activeSlot = MutableStateFlow<Int?>(null)
+    val activeSlotId = _activeSlot.asStateFlow()
 
-    val clubsState: StateFlow<List<ClubEntity>> = repository.clubsFlow.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5000),
-        initialValue = emptyList()
-    )
+    private val _slotsInfo = MutableStateFlow<List<SlotInfo>>(emptyList())
+    val slotsInfo = _slotsInfo.asStateFlow()
 
-    val newsState: StateFlow<List<NewsEntity>> = repository.newsFlow.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5000),
-        initialValue = emptyList()
-    )
+    var currentDao: CareerDao? = null
+    var currentRepo: CareerRepository? = null
 
-    val fixturesState: StateFlow<List<FixtureEntity>> = repository.fixturesFlow.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5000),
-        initialValue = emptyList()
-    )
+    val repository: CareerRepository
+        get() = currentRepo ?: fallbackRepository
 
-    val transferPlayersState: StateFlow<List<PlayerEntity>> = repository.transferPlayersFlow.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5000),
-        initialValue = emptyList()
-    )
+    val dao: CareerDao
+        get() = currentDao ?: fallbackDao
 
-    val journalsState: StateFlow<List<JournalEntity>> = repository.journalsFlow.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5000),
-        initialValue = emptyList()
-    )
+    // State Collection Job
+    private var activeCollectionJob: Job? = null
 
-    val loanedOutPlayers: StateFlow<List<PlayerEntity>> = dao.getPlayersFlow().map { list ->
-        val userC = _userClub.value
-        if (userC != null) {
-            list.filter { it.originalClubId == userC.id && it.isOnLoan && it.clubId != userC.id }
-        } else {
-            emptyList()
-        }
-    }.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5000),
-        initialValue = emptyList()
-    )
+    // Mutable states that are populated dynamically once a slot is active
+    private val _careerState = MutableStateFlow<CareerEntity?>(null)
+    val careerState = _careerState.asStateFlow()
+
+    private val _clubsState = MutableStateFlow<List<ClubEntity>>(emptyList())
+    val clubsState = _clubsState.asStateFlow()
+
+    private val _newsState = MutableStateFlow<List<NewsEntity>>(emptyList())
+    val newsState = _newsState.asStateFlow()
+
+    private val _fixturesState = MutableStateFlow<List<FixtureEntity>>(emptyList())
+    val fixturesState = _fixturesState.asStateFlow()
+
+    private val _transferPlayersState = MutableStateFlow<List<PlayerEntity>>(emptyList())
+    val transferPlayersState = _transferPlayersState.asStateFlow()
+
+    private val _journalsState = MutableStateFlow<List<JournalEntity>>(emptyList())
+    val journalsState = _journalsState.asStateFlow()
+
+    private val _loanedOutPlayers = MutableStateFlow<List<PlayerEntity>>(emptyList())
+    val loanedOutPlayers = _loanedOutPlayers.asStateFlow()
 
     // Scout Discoveries Flow
-    val scoutDiscoveries: StateFlow<List<PlayerEntity>> = dao.getPlayersFlow().map { list ->
-        list.filter { it.clubId == -2 }
-    }.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5000),
-        initialValue = emptyList()
-    )
+    private val _scoutDiscoveries = MutableStateFlow<List<PlayerEntity>>(emptyList())
+    val scoutDiscoveries = _scoutDiscoveries.asStateFlow()
+
+    // Resignation and Job Offers tracking
+    private val _isResignedState = MutableStateFlow(false)
+    val isResignedState = _isResignedState.asStateFlow()
+
+    private val _jobOffers = MutableStateFlow<List<ClubJobOffer>>(emptyList())
+    val jobOffers = _jobOffers.asStateFlow()
+
+    fun getDatabaseForSlot(slot: Int): AppDatabase {
+        return Room.databaseBuilder(
+            getApplication(),
+            AppDatabase::class.java,
+            "soccer_manager_career_database_slot_$slot"
+        )
+        .fallbackToDestructiveMigration()
+        .build()
+    }
+
+    fun loadSlotsInfo() {
+        viewModelScope.launch {
+            val list = mutableListOf<SlotInfo>()
+            for (slot in 1..3) {
+                try {
+                    val db = getDatabaseForSlot(slot)
+                    val career = db.careerDao().getCareer()
+                    if (career != null) {
+                        val dbClub = db.careerDao().getClubById(career.clubId)
+                        list.add(
+                            SlotInfo(
+                                slotId = slot,
+                                hasData = true,
+                                managerName = career.managerName,
+                                clubName = dbClub?.name ?: "Unknown",
+                                clubNameAr = dbClub?.nameAr ?: "غير معروف",
+                                league = career.selectedLeagueCode,
+                                season = career.season,
+                                week = career.week
+                            )
+                        )
+                    } else {
+                        list.add(SlotInfo(slotId = slot, hasData = false))
+                    }
+                    db.close()
+                } catch (e: Exception) {
+                    list.add(SlotInfo(slotId = slot, hasData = false))
+                }
+            }
+            _slotsInfo.value = list
+        }
+    }
+
+    fun selectSaveSlot(slotId: Int) {
+        _activeSlot.value = slotId
+        val dbForSlot = getDatabaseForSlot(slotId)
+        val daoForSlot = dbForSlot.careerDao()
+        val repoForSlot = CareerRepository(daoForSlot)
+
+        currentDao = daoForSlot
+        currentRepo = repoForSlot
+
+        // Cancel old collector
+        activeCollectionJob?.cancel()
+
+        _isResignedState.value = false
+        _jobOffers.value = emptyList()
+
+        // Sync and launch job to retrieve database updates reactively
+        activeCollectionJob = viewModelScope.launch {
+            launch {
+                repoForSlot.careerFlow.collect { career ->
+                    _careerState.value = career
+                    if (career != null) {
+                        val userC = daoForSlot.getClubById(career.clubId)
+                        _userClub.value = userC
+
+                        val squad = repoForSlot.getPlayersByClub(career.clubId)
+                        _userSquad.value = squad
+
+                        val fixtures = repoForSlot.getFixturesByWeek(career.week)
+                        val nextF = fixtures.firstOrNull {
+                            it.homeTeamId == career.clubId || it.awayTeamId == career.clubId
+                        }
+                        _matchFixture.value = nextF
+                        if (nextF != null) {
+                            val oppId = if (nextF.homeTeamId == career.clubId) nextF.awayTeamId else nextF.homeTeamId
+                            _opponentClub.value = daoForSlot.getClubById(oppId)
+                        }
+                    } else {
+                        // Reset when database gets deleted
+                        _userClub.value = null
+                        _userSquad.value = emptyList()
+                        _matchFixture.value = null
+                        _opponentClub.value = null
+                    }
+                }
+            }
+
+            launch {
+                repoForSlot.clubsFlow.collect { list ->
+                    _clubsState.value = list
+                }
+            }
+
+            launch {
+                repoForSlot.newsFlow.collect { list ->
+                    _newsState.value = list
+                }
+            }
+
+            launch {
+                repoForSlot.fixturesFlow.collect { list ->
+                    _fixturesState.value = list
+                }
+            }
+
+            launch {
+                repoForSlot.journalsFlow.collect { list ->
+                    _journalsState.value = list
+                }
+            }
+
+            launch {
+                repoForSlot.transferPlayersFlow.collect { list ->
+                    _transferPlayersState.value = list
+                }
+            }
+
+            launch {
+                daoForSlot.getPlayersFlow().collect { list ->
+                    val userC = _userClub.value
+                    _loanedOutPlayers.value = if (userC != null) {
+                        list.filter { it.originalClubId == userC.id && it.isOnLoan && it.clubId != userC.id }
+                    } else {
+                        emptyList()
+                    }
+                    _scoutDiscoveries.value = list.filter { it.clubId == -2 }
+                }
+            }
+        }
+    }
+
+    fun exitSaveSlot() {
+        activeCollectionJob?.cancel()
+        currentDao = null
+        currentRepo = null
+        _activeSlot.value = null
+        _careerState.value = null
+        _userClub.value = null
+        _userSquad.value = emptyList()
+        _matchFixture.value = null
+        _opponentClub.value = null
+        loadSlotsInfo()
+    }
+
+    fun deleteSaveSlot(slotId: Int) {
+        viewModelScope.launch {
+            try {
+                val db = getDatabaseForSlot(slotId)
+                db.clearAllTables()
+                db.close()
+                getApplication<Application>().deleteDatabase("soccer_manager_career_database_slot_$slotId")
+            } catch (e: Exception) {
+                // Ignore failure
+            }
+            loadSlotsInfo()
+        }
+    }
+
+    // Resignation
+    fun resignFromCurrentClub() {
+        val career = careerState.value ?: return
+        val uClub = userClub.value ?: return
+        viewModelScope.launch {
+            // Remove user ownership from current club
+            dao.updateClub(uClub.copy(isUser = false))
+
+            // Compilation of 4 random Club job offers
+            val allClubs = dao.getClubs().filter { it.id != uClub.id }
+            val selectedOffers = allClubs.shuffled().take(4).map { c ->
+                ClubJobOffer(
+                    clubId = c.id,
+                    clubName = c.name,
+                    clubNameAr = c.nameAr,
+                    budget = c.budget,
+                    league = c.league,
+                    primaryColor = c.primaryColor,
+                    reputation = c.reputation,
+                    contractWage = (c.reputation * 1000L + Random.nextInt(-5000, 10000)).coerceAtLeast(12000L)
+                )
+            }
+            _jobOffers.value = selectedOffers
+            _isResignedState.value = true
+
+            // Send board notification
+            val resignNews = NewsEntity(
+                title = "Sensational Manager Resignation!",
+                titleAr = "عاجل: تقديم استقالة المدرب ⚡",
+                content = "${career.managerName} has officially resigned from ${uClub.name} and is looking for a new tactical vacancy in global soccer leagues.",
+                contentAr = "أخبار عاجلة وصادمة! قدّم المدرب الفني والقدير ${career.managerName} استقالته الرسمية من تدريب نادي ${uClub.nameAr}. يُقال أن وكيل أعماله يُناقش بعض العروض المحلية والدولية الجديدة الكبرى والمتاحة حالياً!",
+                type = "Board"
+            )
+            repository.insertNews(resignNews)
+        }
+    }
+
+    fun acceptJobOffer(offer: ClubJobOffer) {
+        val career = careerState.value ?: return
+        viewModelScope.launch {
+            val newClub = dao.getClubById(offer.clubId) ?: return@launch
+
+            // Set new club isUser to true
+            dao.updateClub(newClub.copy(isUser = true))
+
+            // Clear squad cache before loading
+            _userSquad.value = emptyList()
+
+            // Update Career attributes
+            val updatedCareer = career.copy(
+                clubId = newClub.id,
+                budget = newClub.budget,
+                selectedLeagueCode = newClub.league
+            )
+            repository.updateCareer(updatedCareer)
+
+            val newSquad = repository.getPlayersByClub(newClub.id)
+            _userSquad.value = newSquad
+            _userClub.value = newClub
+
+            // Re-identify match fixture
+            val fixtures = repository.getFixturesByWeek(career.week)
+            val nextF = fixtures.firstOrNull {
+                it.homeTeamId == newClub.id || it.awayTeamId == newClub.id
+            }
+            _matchFixture.value = nextF
+            if (nextF != null) {
+                val oppId = if (nextF.homeTeamId == newClub.id) nextF.awayTeamId else nextF.homeTeamId
+                _opponentClub.value = dao.getClubById(oppId)
+            }
+
+            // News announcement
+            val welcomeNews = NewsEntity(
+                title = "New Appointment Announcement!",
+                titleAr = "رسمياً: تعيين المدرب الجديد لنادي ${newClub.nameAr}! ✍️",
+                content = "Sensational! ${career.managerName} has officially signed a contract with ${newClub.name} with a total transfer budget of $${newClub.budget / 1_000_000}M.",
+                contentAr = "تم حسم الأمور! وقّع المدرب الفذ ${career.managerName} عقداً رسمياً جديداً ليقود الدفة الفنية لنادي ${newClub.nameAr}! وقد أبدى تطلعه لتحقيق البطولات بميزانية تعاقدات قدرها $${newClub.budget / 1_000_000} مليون دولار.",
+                type = "Board"
+            )
+            repository.insertNews(welcomeNews)
+
+            // Logging welcomes in journal
+            val apptJournal = JournalEntity(
+                season = career.season,
+                week = career.week,
+                title = "New Club Takeover",
+                titleAr = "تولّي القيادة الفنية في نادي ${newClub.nameAr} 🌟",
+                content = "Signed contracts with ${newClub.name}.",
+                contentAr = "تم توقيع عقد تدريب القيادة الكروية في نادي ${newClub.nameAr} رسمياً وبداية المعسكر التدريبي الأول لتهيئة واستقطاب اللاعبين الجدد!",
+                isAuto = true
+            )
+            repository.insertJournal(apptJournal)
+
+            // Clear Resignation state
+            _isResignedState.value = false
+            _jobOffers.value = emptyList()
+            _currentTab.value = 0 // Return to home screen
+        }
+    }
+
 
     // UI state holder
     private val _currentTab = MutableStateFlow(0) // 0: Home, 1: Squad, 2: Table, 3: Transfers, 4: Inbox
@@ -276,31 +555,7 @@ class CareerViewModel(application: Application) : AndroidViewModel(application) 
     val isSkippingSeason = _isSkippingSeason.asStateFlow()
 
     init {
-        // Observe career to update user squad, club, etc.
-        viewModelScope.launch {
-            repository.careerFlow.collect { career ->
-                if (career != null) {
-                    val userC = repository.getClubById(career.clubId)
-                    _userClub.value = userC
-                    
-                    // Core Squad
-                    val squad = repository.getPlayersByClub(career.clubId)
-                    _userSquad.value = squad
-
-                    // Look up next match fixture
-                    val fixtures = repository.getFixturesByWeek(career.week)
-                    val nextF = fixtures.firstOrNull {
-                        it.homeTeamId == career.clubId || it.awayTeamId == career.clubId
-                    }
-                    _matchFixture.value = nextF
-
-                    if (nextF != null) {
-                        val oppId = if (nextF.homeTeamId == career.clubId) nextF.awayTeamId else nextF.homeTeamId
-                        _opponentClub.value = repository.getClubById(oppId)
-                    }
-                }
-            }
-        }
+        loadSlotsInfo()
     }
 
     // User Career Creation

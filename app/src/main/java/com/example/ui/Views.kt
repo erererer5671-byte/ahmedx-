@@ -33,6 +33,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.window.Dialog
 import com.example.data.*
 import com.example.viewmodel.CareerViewModel
+import com.example.viewmodel.SlotInfo
+import com.example.viewmodel.ClubJobOffer
 import com.example.viewmodel.MatchPlayState
 import com.example.viewmodel.MatchEvent
 import com.example.viewmodel.MatchOption
@@ -41,6 +43,11 @@ import kotlin.random.Random
 
 @Composable
 fun SoccerAppMainView(viewModel: CareerViewModel) {
+    val activeSlotId by viewModel.activeSlotId.collectAsStateWithLifecycle()
+    val slotsInfo by viewModel.slotsInfo.collectAsStateWithLifecycle()
+    val isResignedState by viewModel.isResignedState.collectAsStateWithLifecycle()
+    val jobOffers by viewModel.jobOffers.collectAsStateWithLifecycle()
+
     val career by viewModel.careerState.collectAsStateWithLifecycle()
     val clubs by viewModel.clubsState.collectAsStateWithLifecycle()
     val news by viewModel.newsState.collectAsStateWithLifecycle()
@@ -102,7 +109,19 @@ fun SoccerAppMainView(viewModel: CareerViewModel) {
         modifier = Modifier.fillMaxSize(),
         color = Color(0xFF111318) // Eye-safe premium dark background
     ) {
-        if (career == null) {
+        if (activeSlotId == null) {
+            SlotSelectionScreen(
+                slots = slotsInfo,
+                onResumeSlot = { slotId -> viewModel.selectSaveSlot(slotId) },
+                onDeleteSlot = { slotId -> viewModel.deleteSaveSlot(slotId) }
+            )
+        } else if (isResignedState) {
+            JobOffersScreen(
+                offers = jobOffers,
+                managerName = career?.managerName ?: "",
+                onAcceptOffer = { offer -> viewModel.acceptJobOffer(offer) }
+            )
+        } else if (career == null) {
             // First run: Career Selection Setup
             CareerSetupScreen { name, clubId, mode, pos, league ->
                 viewModel.createNewCareer(name, clubId, mode, pos, league)
@@ -188,7 +207,9 @@ fun SoccerAppMainView(viewModel: CareerViewModel) {
                                 onQuickSim = { viewModel.quickSimulateMatch() },
                                 onAdvanceWeek = { viewModel.advanceWeek() },
                                 onSkipSeason = { viewModel.skipEntireSeason() },
-                                onSelectSponsor = { viewModel.chooseSponsor(it) }
+                                onSelectSponsor = { viewModel.chooseSponsor(it) },
+                                onResign = { viewModel.resignFromCurrentClub() },
+                                onExitSaves = { viewModel.exitSaveSlot() }
                             )
                             1 -> SquadScreen(
                                 userClub = userClub,
@@ -212,19 +233,24 @@ fun SoccerAppMainView(viewModel: CareerViewModel) {
                                 currentWeek = career!!.week,
                                 fixtures = fixtures
                             )
-                            3 -> TransfersScreen(
-                                career = career!!,
-                                userClub = userClub!!,
-                                availablePlayers = transferPlayers,
-                                activeBidPlayer = activeBidPlayer,
-                                bidDialogState = bidDialogState,
-                                onBuyPlayer = { viewModel.purchasePlayer(it) },
-                                onLoanPlayer = { viewModel.loanInPlayer(it) },
-                                onSelectBidPlayer = { viewModel.selectPlayerForBid(it) },
-                                onCancelBid = { viewModel.closeBidDialog() },
-                                onSubmitBid = { p, bid -> viewModel.submitTransferBid(p, bid) },
-                                onAcceptCounter = { p, counter -> viewModel.acceptCounterOffer(p, counter) }
-                            )
+                            3 -> {
+                                val uClub = userClub
+                                if (uClub != null) {
+                                    TransfersScreen(
+                                        career = career!!,
+                                        userClub = uClub,
+                                        availablePlayers = transferPlayers,
+                                        activeBidPlayer = activeBidPlayer,
+                                        bidDialogState = bidDialogState,
+                                        onBuyPlayer = { viewModel.purchasePlayer(it) },
+                                        onLoanPlayer = { viewModel.loanInPlayer(it) },
+                                        onSelectBidPlayer = { viewModel.selectPlayerForBid(it) },
+                                        onCancelBid = { viewModel.closeBidDialog() },
+                                        onSubmitBid = { p, bid -> viewModel.submitTransferBid(p, bid) },
+                                        onAcceptCounter = { p, counter -> viewModel.acceptCounterOffer(p, counter) }
+                                    )
+                                }
+                            }
                             4 -> InboxScreen(
                                 newsList = news,
                                 onProcessIncomingOffer = { item, accept -> viewModel.processIncomingTransferOffer(item, accept) }
@@ -691,7 +717,9 @@ fun HomeScreen(
     onQuickSim: () -> Unit,
     onAdvanceWeek: () -> Unit,
     onSkipSeason: () -> Unit,
-    onSelectSponsor: (String) -> Unit
+    onSelectSponsor: (String) -> Unit,
+    onResign: () -> Unit,
+    onExitSaves: () -> Unit
 ) {
     if (userClub == null) return
 
@@ -789,6 +817,111 @@ fun HomeScreen(
                                 fontWeight = FontWeight.SemiBold,
                                 color = Color.White
                             )
+                        }
+                    }
+                }
+            }
+        }
+
+        item {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 16.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF1B1D24)),
+                border = BorderStroke(1.dp, Color(0xFF38495C)),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .background(Color(0xFF0F4C81), RoundedCornerShape(6.dp))
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Text(
+                                text = "خيارات المسيرة والكشافة ⚙️",
+                                color = Color.White,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        Text(
+                            text = "إدارة مسيرتك المهنية",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFFBACDFF)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "تتيح لك إدارة ملف الحفظ والتبديل بين ملفاتك في أي وقت، أو الخروج لتقديم استقالة تكتيكية فورية للبحث عن عقود وتطلعات جديدة مع أندية متميزة أخرى!",
+                        fontSize = 11.sp,
+                        color = Color(0xFFCFD8DC),
+                        textAlign = TextAlign.Right,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        // Exit saves slot
+                        Button(
+                            onClick = onExitSaves,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF38495C),
+                                contentColor = Color.White
+                            ),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.weight(1.5f),
+                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 8.dp)
+                        ) {
+                            Icon(Icons.Default.ExitToApp, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("الخروج لقائمة الحفظ", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        // Resign from team
+                        var confirmResign by remember { mutableStateOf(false) }
+                        if (confirmResign) {
+                            Button(
+                                onClick = {
+                                    confirmResign = false
+                                    onResign()
+                                },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xFFB71C1C),
+                                    contentColor = Color.White
+                                ),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.weight(1.5f),
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 8.dp)
+                            ) {
+                                Text("تأكيد الاستقالة فوراً! ⚠️", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                        } else {
+                            Button(
+                                onClick = { confirmResign = true },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xFF5C1010),
+                                    contentColor = Color.White
+                                ),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.weight(1.5f),
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 8.dp)
+                            ) {
+                                Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("تقديم الاستقالة", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
                         }
                     }
                 }
@@ -4198,6 +4331,382 @@ fun AcademyScreen(
                             fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
                             modifier = Modifier.padding(vertical = 2.dp)
                         )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun SlotSelectionScreen(
+    slots: List<SlotInfo>,
+    onResumeSlot: (Int) -> Unit,
+    onDeleteSlot: (Int) -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = Color(0xFF0F1115) // Deep premium dark background
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(24.dp)
+                .verticalScroll(rememberScrollState()),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Spacer(modifier = Modifier.height(24.dp))
+            
+            // App Main Badge representing World Soccer Champs
+            Box(
+                modifier = Modifier
+                    .size(80.dp)
+                    .background(Color(0xFF1E2530), CircleShape)
+                    .border(2.dp, Color(0xFFFFD700), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("🏆", fontSize = 36.sp)
+            }
+            
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            Text(
+                text = "بطل كرة القدم العالمية - ملفات الحفظ",
+                color = Color.White,
+                fontSize = 22.sp,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center
+            )
+            Text(
+                text = "World Soccer Champs | 3 Save Slots Support",
+                color = Color(0xFF8A99AD),
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center
+            )
+            
+            Spacer(modifier = Modifier.height(28.dp))
+            
+            // Render the 3 save slots
+            for (slotId in 1..3) {
+                val slot = slots.firstOrNull { it.slotId == slotId } ?: SlotInfo(slotId = slotId, hasData = false)
+                
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 10.dp)
+                        .testTag("save_slot_$slotId"),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (slot.hasData) Color(0xFF1B1E24) else Color(0xFF14171C)
+                    ),
+                    border = BorderStroke(
+                        width = 1.2.dp,
+                        color = if (slot.hasData) Color(0xFF2C3E50) else Color(0xFF22252A)
+                    ),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(18.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .background(
+                                        color = if (slot.hasData) Color(0xFF1E3C5C) else Color(0xFF2C2F36),
+                                        shape = RoundedCornerShape(6.dp)
+                                    )
+                                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                            ) {
+                                Text(
+                                    text = "ملف الحفظ #${slotId}",
+                                    color = if (slot.hasData) Color(0xFFBACDFF) else Color(0xFF9EA3AE),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            
+                            if (slot.hasData) {
+                                Text(
+                                    text = "الموسم ${slot.season} | الأسبوع ${slot.week}",
+                                    color = Color(0xFF00C853),
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            } else {
+                                Text(
+                                    text = "خانة فارغة",
+                                    color = Color(0xFF757575),
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Normal
+                                )
+                            }
+                        }
+                        
+                        Spacer(modifier = Modifier.height(14.dp))
+                        
+                        if (slot.hasData) {
+                            Column(modifier = Modifier.fillMaxWidth()) {
+                                Text(
+                                    text = "المدرب: ${slot.managerName}",
+                                    color = Color.White,
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    textAlign = TextAlign.Right,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                Text(
+                                    text = "النادي: ${slot.clubNameAr}",
+                                    color = Color(0xFFB0BEC5),
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    textAlign = TextAlign.Right,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                if (slot.league.isNotBlank()) {
+                                    Text(
+                                        text = "الدوري: ${slot.league}",
+                                        color = Color(0xFF90A4AE),
+                                        fontSize = 11.sp,
+                                        textAlign = TextAlign.Right,
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                }
+                            }
+                            
+                            Spacer(modifier = Modifier.height(16.dp))
+                            
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                // Resume Play button
+                                Button(
+                                    onClick = { onResumeSlot(slotId) },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = Color(0xFF1976D2),
+                                        contentColor = Color.White
+                                    ),
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier.weight(1.5f),
+                                    contentPadding = PaddingValues(vertical = 8.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.PlayArrow,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("متابعة المسيرة", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                }
+                                
+                                // Delete slot button
+                                var showDeleteConfirm by remember { mutableStateOf(false) }
+                                
+                                if (showDeleteConfirm) {
+                                    Button(
+                                        onClick = {
+                                            showDeleteConfirm = false
+                                            onDeleteSlot(slotId)
+                                        },
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = Color(0xFFD32F2F),
+                                            contentColor = Color.White
+                                        ),
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier.weight(1f),
+                                        contentPadding = PaddingValues(vertical = 8.dp)
+                                    ) {
+                                        Text("تأكيد ⚠️", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                } else {
+                                    Button(
+                                        onClick = { showDeleteConfirm = true },
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = Color(0xFFFF8A80).copy(alpha = 0.15f),
+                                            contentColor = Color(0xFFFF8A80)
+                                        ),
+                                        border = BorderStroke(1.dp, Color(0xFFFF8A80).copy(alpha = 0.3f)),
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier.weight(0.8f),
+                                        contentPadding = PaddingValues(vertical = 8.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Delete,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("مسح", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                        } else {
+                            // Empty slot button to start new career
+                            Button(
+                                onClick = { onResumeSlot(slotId) },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xFF2E7D32),
+                                    contentColor = Color.White
+                                ),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Add,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("بدء مسيرة كروية جديدة", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(30.dp))
+            Text(
+                text = "اختر أحد ملفات الحفظ الوجيهة للمتابعة من حيث توقفت، أو احذف تقدماً قديماً لبدء مغامرة تدريبية بنادي جديد.",
+                color = Color(0xFF5F6E7F),
+                fontSize = 11.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 12.dp)
+            )
+        }
+    }
+}
+
+@Composable
+fun JobOffersScreen(
+    offers: List<ClubJobOffer>,
+    managerName: String,
+    onAcceptOffer: (ClubJobOffer) -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = Color(0xFF101216)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(20.dp)
+                .verticalScroll(rememberScrollState()),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Spacer(modifier = Modifier.height(20.dp))
+            Text(
+                text = "سوق عمل المدربين الأحرار 📝",
+                color = Color(0xFFFFD700),
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center
+            )
+            Text(
+                text = "لقد قدمت استقالتك بنجاح! رتّب لك وكيل أعمالك العروض المهنية المتاحة للتعاقد الفوري:",
+                color = Color.White,
+                fontSize = 13.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(vertical = 10.dp)
+            )
+            
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            if (offers.isEmpty()) {
+                Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = Color(0xFFBACDFF))
+                }
+            } else {
+                for (offer in offers) {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 10.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF1A1C22)),
+                        border = BorderStroke(1.5.dp, Color(offer.primaryColor).copy(alpha = 0.7f)),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            // Header of offer
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .background(Color(offer.primaryColor), RoundedCornerShape(6.dp))
+                                        .padding(horizontal = 8.dp, vertical = 2.dp)
+                                ) {
+                                    Text(
+                                        text = offer.league,
+                                        color = Color.White,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                                
+                                Row {
+                                    val numStars = (offer.reputation / 18).coerceIn(1, 5)
+                                    repeat(numStars) {
+                                        Text("⭐", fontSize = 12.sp)
+                                    }
+                                }
+                            }
+                            
+                            Spacer(modifier = Modifier.height(10.dp))
+                            
+                            // Club detail
+                            Text(
+                                text = offer.clubNameAr,
+                                fontSize = 18.sp,
+                                color = Color.White,
+                                fontWeight = FontWeight.Black,
+                                textAlign = TextAlign.Right,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Text(
+                                text = "Club Name: ${offer.clubName}",
+                                fontSize = 12.sp,
+                                color = Color(0xFF90A4AE),
+                                textAlign = TextAlign.Right,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            
+                            Spacer(modifier = Modifier.height(12.dp))
+                            
+                            // Finances Row
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column(horizontalAlignment = Alignment.Start) {
+                                    Text("الميزانية المتاحة للتعاقدات", fontSize = 11.sp, color = Color(0xFF90A4AE))
+                                    Text("$${offer.budget / 1_000_000}M", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color(0xFF00E676))
+                                }
+                                
+                                Column(horizontalAlignment = Alignment.End) {
+                                    Text("الراتب الأسبوعي المقترح", fontSize = 11.sp, color = Color(0xFF90A4AE))
+                                    Text("$${offer.contractWage / 1_000}K / أسبوع", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color(0xFF29B6F6))
+                                }
+                            }
+                            
+                            Spacer(modifier = Modifier.height(16.dp))
+                            
+                            Button(
+                                onClick = { onAcceptOffer(offer) },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(offer.primaryColor)),
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                Text("توقيع العقد الفني وبدء المسيرة مع النادي ✍️", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                            }
+                        }
                     }
                 }
             }
