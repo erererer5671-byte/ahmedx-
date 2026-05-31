@@ -104,13 +104,14 @@ fun SoccerAppMainView(viewModel: CareerViewModel) {
     ) {
         if (career == null) {
             // First run: Career Selection Setup
-            CareerSetupScreen { managerName, clubId ->
-                viewModel.createNewCareer(managerName, clubId)
+            CareerSetupScreen { name, clubId, mode, pos, league ->
+                viewModel.createNewCareer(name, clubId, mode, pos, league)
             }
         } else {
             // Check if user is currently playing a match
             if (matchState != MatchPlayState.PreMatch) {
                 MatchSimScreen(
+                    viewModel = viewModel,
                     matchPlayState = matchState,
                     userClub = userClub,
                     opponentClub = opponentClub,
@@ -136,7 +137,9 @@ fun SoccerAppMainView(viewModel: CareerViewModel) {
                                 Triple(2, "الترتيب\nTable", Icons.Default.Star),
                                 Triple(3, "الانتقالات\nTransfers", Icons.Default.ShoppingCart),
                                 Triple(4, "البريد\nInbox", Icons.Default.Email),
-                                Triple(5, "المذكرات\nDiary", Icons.Default.Create)
+                                Triple(5, "المذكرات\nDiary", Icons.Default.Create),
+                                Triple(6, "الكشافة\nScout", Icons.Default.Search),
+                                Triple(7, "الأكاديمية\nAcademy", Icons.Default.Face)
                             )
                             tabs.forEach { (index, label, icon) ->
                                 val isSelected = activeTab == index
@@ -184,7 +187,8 @@ fun SoccerAppMainView(viewModel: CareerViewModel) {
                                 onStartMatch = { viewModel.startInteractiveMatch() },
                                 onQuickSim = { viewModel.quickSimulateMatch() },
                                 onAdvanceWeek = { viewModel.advanceWeek() },
-                                onSkipSeason = { viewModel.skipEntireSeason() }
+                                onSkipSeason = { viewModel.skipEntireSeason() },
+                                onSelectSponsor = { viewModel.chooseSponsor(it) }
                             )
                             1 -> SquadScreen(
                                 userClub = userClub,
@@ -230,6 +234,23 @@ fun SoccerAppMainView(viewModel: CareerViewModel) {
                                 career = career!!,
                                 onAddManualNote = { viewModel.writeManualJournal("خاطرة المدرب ✏️", it) }
                             )
+                            6 -> {
+                                val scoutDiscoveries by viewModel.scoutDiscoveries.collectAsStateWithLifecycle()
+                                ScoutingScreen(
+                                    career = career!!,
+                                    discoveries = scoutDiscoveries,
+                                    onUpgradeScout = { viewModel.upgradeScout() },
+                                    onLaunchMission = { viewModel.launchScoutMission(it) },
+                                    onSignProdigy = { viewModel.signScoutProdigy(it) }
+                                )
+                            }
+                            7 -> {
+                                AcademyScreen(
+                                    career = career!!,
+                                    onUpgradeAcademy = { viewModel.upgradeAcademy() },
+                                    onPromoteProdigy = { viewModel.promoteAcademyProdigy() }
+                                )
+                            }
                         }
                     }
                 }
@@ -239,25 +260,101 @@ fun SoccerAppMainView(viewModel: CareerViewModel) {
 }
 
 // ---------------- SQUAD PROFILE CONFIGURATION SETUP ----------------
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalAnimationApi::class)
 @Composable
-fun CareerSetupScreen(onSetupFinished: (String, Int) -> Unit) {
-    var managerName by remember { mutableStateOf("") }
-    var selectedClubId by remember { mutableStateOf(1) } // Default Al-Hilal
+fun CareerSetupScreen(onSetupFinished: (String, Int, String, String, String) -> Unit) {
+    var nameInput by remember { mutableStateOf("") }
+    var careerMode by remember { mutableStateOf("Manager") } // "Manager" or "Player"
+    var playerPosition by remember { mutableStateOf("ATT") } // "ATT", "MID", "DEF", "GK"
+    var selectedLeague by remember { mutableStateOf("SPL") } // "SPL", "EPL", "LAL", "SER", "BUN", "FRA"
+    var selectedClubId by remember { mutableStateOf(1) } // Dynamic based on league selection
 
-    val initialClubs = remember {
-        listOf(
-            Triple(1, "Al-Hilal (الهلال)", "$120M - النخبة"),
-            Triple(2, "Al-Nassr (النصر)", "$110M - النخبة"),
-            Triple(3, "Al-Ittihad (الاتحاد)", "$100M - العميد"),
-            Triple(4, "Al-Ahli (الأهلي)", "$90M - الراقي"),
-            Triple(5, "Real Madrid (ريال مدريد)", "$180M - الملكي"),
-            Triple(6, "Barcelona (برشلونة)", "$130M - الكتالوني"),
-            Triple(7, "Manchester City (السيتي)", "$190M - بطل انجلترا"),
-            Triple(8, "Liverpool (ليفربول)", "$140M - الريدز"),
-            Triple(9, "Bayern Munich (البايرن)", "$135M - البافاري"),
-            Triple(10, "Paris Saint-Germain (باريس)", "$150M - سان جيرمان")
+    // 8 select-able leagues definitions
+    val leaguesList = listOf(
+        Triple("SPL", "الدوري السعودي 🇸🇦", "Saudi Pro League"),
+        Triple("EPL", "الدوري الإنجليزي 🏴󠁧󠁢󠁥󠁮󠁧󠁿", "Premier League"),
+        Triple("ECHA", "دوري الأولى الإنجليزي 🏴󠁧󠁢󠁥󠁮󠁧󠁿", "Championship"),
+        Triple("EL1", "دوري الثانية الإنجليزي 🏴󠁧󠁢󠁥󠁮󠁧󠁿", "League One"),
+        Triple("LAL", "الدوري الإسباني 🇪🇸", "LaLiga"),
+        Triple("SER", "الدوري الإيطالي 🇮🇹", "Serie A"),
+        Triple("BUN", "الدوري الألماني 🇩🇪", "Bundesliga"),
+        Triple("FRA", "الدوري الفرنسي 🇫🇷", "Ligue 1")
+    )
+
+    // Complete index mapping for clubs across leagues
+    val clubsByLeague = mapOf(
+        "SPL" to listOf(
+            Triple(1, "Al-Hilal (الهلال) 👑", "الميزانية: $120M - النخبة الأزرق"),
+            Triple(2, "Al-Nassr (النصر) 💛", "الميزانية: $110M - نجد العالمي"),
+            Triple(3, "Al-Ittihad (الاتحاد) 🖤", "الميزانية: $100M - العميد الجداوي"),
+            Triple(4, "Al-Ahli (الأهلي) 💚", "الميزانية: $90M - الراقي التاريخي"),
+            Triple(5, "Al-Shabab (الشباب) 🤍", "الميزانية: $65M - الليث الشبابي"),
+            Triple(6, "Al-Ettifaq (الاتفاق) ❤️", "الميزانية: $50M - فارس الدهناء")
+        ),
+        "EPL" to listOf(
+            Triple(7, "Manchester City (سيتي) 🩵", "الميزانية: $190M - حامل اللقب البطل"),
+            Triple(8, "Arsenal (أرسنال) ❤️", "الميزانية: $150M - المدفعجية اللندني"),
+            Triple(9, "Liverpool (ليفربول) 🔴", "الميزانية: $140M - الريدز العريق"),
+            Triple(10, "Chelsea (تشيلسي) 💙", "الميزانية: $120M - البلوز اللندني"),
+            Triple(11, "Manchester United (يونايتد) 👹", "الميزانية: $130M - الشياطين الحمر"),
+            Triple(12, "Tottenham Hotspur (توتنهام) ⚪", "الميزانية: $90M - السبيرز المميز")
+        ),
+        "ECHA" to listOf(
+            Triple(37, "Leicester City (ليستر سيتي) 🦊", "الميزانية: $45M - أوراق برتبة الثعالب"),
+            Triple(38, "Leeds United (ليدز يونايتد) 🤍", "الميزانية: $38M - فخر ليدز الأبيض"),
+            Triple(39, "Southampton (ساوثهامبتون) 🔴⚪", "الميزانية: $35M - القديسين العنيدين"),
+            Triple(40, "Ipswich Town (إيبسويتش) 🚜", "الميزانية: $30M - تراكتورز الصاعد"),
+            Triple(41, "West Brom (وست بروميتش) 🔵⚪", "الميزانية: $25M - الباغيز الخصم الصعب"),
+            Triple(42, "Norwich City (نورويتش) 🪵", "الميزانية: $24M - جزر الكناري الهجومية")
+        ),
+        "EL1" to listOf(
+            Triple(43, "Portsmouth (بورتسموث) ⚓", "الميزانية: $12M - البحارة اللندني التاريخي"),
+            Triple(44, "Derby County (ديربي كاونتي) 🐏", "الميزانية: $11M - الكباش العنيدة والصلبة"),
+            Triple(45, "Bolton Wanderers (بولتون) 🐘", "الميزانية: $10M - فخر بولتون القديم"),
+            Triple(46, "Peterborough (بيتربورو) 🔵", "الميزانية: $8.5M - النادي الهجومي البارع"),
+            Triple(47, "Barnsley (بارنسلي) 🔴", "الميزانية: $8M - التايكس الحاد والمندفع"),
+            Triple(48, "Oxford United (أكسفورد) 🐂", "الميزانية: $7.5M - الثيران العريقة المتأهبة")
+        ),
+        "LAL" to listOf(
+            Triple(13, "Real Madrid (ريال مدريد) 👑", "الميزانية: $180M - سيد أوروبا والملكي"),
+            Triple(14, "Barcelona (برشلونة) 🔵🔴", "الميزانية: $130M - البلوغرانا الكتالوني"),
+            Triple(15, "Atletico Madrid (أتلتيكو) 🔴⚪", "الميزانية: $100M - الروخي بلانكوس الصخرة"),
+            Triple(16, "Real Sociedad (سوسيداد) 🔵", "الميزانية: $60M - الفريق الباسكي الصاعد"),
+            Triple(17, "Real Betis (بيتيس) 🟢", "الميزانية: $55M - النادي الأندلسي الأخضر"),
+            Triple(18, "Sevilla (إشبيلية) ⚪🔴", "الميزانية: $50M - ملك الدوري الأوروبي")
+        ),
+        "SER" to listOf(
+            Triple(19, "Inter Milan (إنتر ميلان) 🖤💙", "الميزانية: $110M - النيراتزوري البطل"),
+            Triple(20, "AC Milan (إي سي ميلان) 🔴🖤", "الميزانية: $85M - الروسونيري العريق"),
+            Triple(21, "Juventus (يوفنتوس) ⚪🖤", "الميزانية: $100M - السيدة العجوز والبيانكونيري"),
+            Triple(22, "Napoli (نابولي) 🩵", "الميزانية: $80M - البارتينوبي الجنوبي"),
+            Triple(23, "AS Roma (روما) 💛❤️", "الميزانية: $65M - الذئاب الرومانية العريقة"),
+            Triple(24, "Atalanta (أتالانتا) 💙🖤", "الميزانية: $55M - قاهر الكبار والإعصار")
+        ),
+        "BUN" to listOf(
+            Triple(25, "Bayern Munich (بايرن ميونخ) 🔴❤️", "الميزانية: $135M - البافاري المرعب"),
+            Triple(26, "Bayer Leverkusen (ليفركوزن) ❤️🖤", "الميزانية: $90M - بطل الثنائية الذهبي"),
+            Triple(27, "Borussia Dortmund (دورتموند) 💛🖤", "الميزانية: $80M - أسود الفيستفاليا"),
+            Triple(28, "RB Leipzig (لايبزيغ) 🔴⚪", "الميزانية: $75M - ثيران لايبزيغ الحمراء"),
+            Triple(29, "Eintracht Frankfurt (فرانكفورت) 🦅", "الميزانية: $50M - النسور الألمانية الصعبة"),
+            Triple(30, "Stuttgart (شتوتغارت) ⚪🔴", "الميزانية: $45M - فخر شتوتغارت")
+        ),
+        "FRA" to listOf(
+            Triple(31, "Paris Saint-Germain (باريس) 🔵🇫🇷", "الميزانية: $150M - الملياردير الباريسي"),
+            Triple(32, "Marseille (مارسيليا) 🩵⚪", "الميزانية: $70M - فخر الجنوب الفرنسي"),
+            Triple(33, "Monaco (موناكو) 🔴⚪", "الميزانية: $65M - نادي الإمارة الراقي"),
+            Triple(34, "Lyon (ليون) 🔵🔴⚪", "الميزانية: $60M - العرين الفرنسي والتاريخي"),
+            Triple(35, "Lille (ليل) 🔴🐶", "الميزانية: $50M - كلاب الصيد العنيدة"),
+            Triple(36, "Nice (نيس) ⚫🔴", "الميزانية: $45M - الصقور الفرنسية الجنوبية")
         )
+    )
+
+    // Dynamic selection update when league toggles
+    LaunchedEffect(selectedLeague) {
+        val filtered = clubsByLeague[selectedLeague] ?: emptyList()
+        if (filtered.isNotEmpty()) {
+            selectedClubId = filtered.first().first
+        }
     }
 
     Box(
@@ -265,7 +362,7 @@ fun CareerSetupScreen(onSetupFinished: (String, Int) -> Unit) {
             .fillMaxSize()
             .background(
                 Brush.verticalGradient(
-                    colors = listOf(Color(0xFF1E252E), Color(0xFF111318))
+                    colors = listOf(Color(0xFF131B24), Color(0xFF0C0E12))
                 )
             )
             .windowInsetsPadding(WindowInsets.statusBars),
@@ -274,140 +371,305 @@ fun CareerSetupScreen(onSetupFinished: (String, Int) -> Unit) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(24.dp)
+                .padding(20.dp)
                 .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             // Visual decorative football header
             Box(
                 modifier = Modifier
-                    .size(80.dp)
-                    .background(Color(0xFF38495C), CircleShape)
-                    .border(2.dp, Color(0xFFD1E4FF), CircleShape),
+                    .size(70.dp)
+                    .background(Color(0xFF1E2F40), CircleShape)
+                    .border(2.dp, Color(0xFF90CAF9), CircleShape),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = Icons.Default.PlayArrow,
                     contentDescription = "soccer",
                     tint = Color.White,
-                    modifier = Modifier.size(45.dp)
+                    modifier = Modifier.size(40.dp)
                 )
             }
 
-            Spacer(modifier = Modifier.height(18.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
             Text(
-                text = "ابدأ مسيرة التدريب الأسطورية",
+                text = "اختر نمط مسيرتك الاحترافية",
                 fontSize = 24.sp,
                 fontWeight = FontWeight.Bold,
                 color = Color.White,
                 textAlign = TextAlign.Center
             )
             Text(
-                text = "Create Coach Career Profile",
-                fontSize = 14.sp,
-                color = Color(0xFFC2C7CF),
+                text = "Assemble Your Football Legacy Profile",
+                fontSize = 12.sp,
+                color = Color(0xFF90A4AE),
                 textAlign = TextAlign.Center
             )
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(20.dp))
 
-            // Coach name input
+            // 1. SELECT CAREER MODE UI (Manager vs Player)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFF1A232E), RoundedCornerShape(12.dp))
+                    .padding(4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                val modes = listOf(
+                    "Manager" to "Manager (مدرب) 👑",
+                    "Player" to "Player (لاعب) ⚽"
+                )
+                modes.forEach { (modeVal, labelText) ->
+                    val isSelected = careerMode == modeVal
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(if (isSelected) Color(0xFF0D47A1) else Color.Transparent)
+                            .clickable { careerMode = modeVal }
+                            .padding(12.dp)
+                            .testTag("mode_tab_$modeVal"),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = labelText,
+                            color = if (isSelected) Color.White else Color(0xFFB0BEC5),
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 14.sp
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(18.dp))
+
+            // 2. NAME INPUT FIELD
             OutlinedTextField(
-                value = managerName,
-                onValueChange = { managerName = it },
-                label = { Text("اسم المدرب / Manager Name", color = Color(0xFFC2C7CF)) },
+                value = nameInput,
+                onValueChange = { nameInput = it },
+                label = {
+                    Text(
+                        text = if (careerMode == "Player") "اسم اللاعب الفنية الكروية / Player Name" else "اسم المدير الفني / Manager Name",
+                        color = Color(0xFF90A4AE)
+                    )
+                },
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedTextColor = Color.White,
                     unfocusedTextColor = Color.White,
-                    focusedBorderColor = Color(0xFFD1E4FF),
-                    unfocusedBorderColor = Color(0xFF43474E)
+                    focusedBorderColor = Color(0xFF90CAF9),
+                    unfocusedBorderColor = Color(0xFF37474F)
                 ),
                 maxLines = 1,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .testTag("coach_name_input")
+                    .testTag("setup_name_input")
             )
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(18.dp))
 
+            // 3. IF PLAYER MODE IS ACTIVE: SHOW POSITION CHANGER & INITIAL PREVIEW ATTRIBUTE CARD
+            AnimatedVisibility(
+                visible = careerMode == "Player",
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically()
+            ) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "اختر مركزك الأساسي بالفريق:",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF90CAF9),
+                        modifier = Modifier.align(Alignment.End)
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        val positions = listOf(
+                            "ATT" to "🎯 مهاجم (ATT)",
+                            "MID" to "🧠 وسط (MID)",
+                            "DEF" to "🛡️ دفاع (DEF)",
+                            "GK" to "🧤 حارس (GK)"
+                        )
+                        positions.forEach { (posCode, label) ->
+                            val isSelected = playerPosition == posCode
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (isSelected) Color(0xFF1B5E20) else Color(0xFF1E252E))
+                                    .border(1.dp, if (isSelected) Color(0xFF4CAF50) else Color(0xFF37474F), RoundedCornerShape(8.dp))
+                                    .clickable { playerPosition = posCode }
+                                    .padding(8.dp)
+                                    .testTag("pos_tab_$posCode"),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = label,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isSelected) Color.White else Color(0xFFB0BEC5),
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Player Starting Stats Cards
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF142416)),
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, Color(0xFF2E7D32))
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Text(
+                                text = "🏆 مواصفات بدايتك الاحترافية (تقييم 75 OVR):",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color(0xFF81C784),
+                                modifier = Modifier.align(Alignment.End)
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = "سوف تبدأ بعمر 18 سنة لتكسب طاقات سريعة وتدريبية! قدراتك تشتمل على طاقة لياقة تامة 100%، وسرعة انطلاق 82، وقدرة تكتيكية خاصة بالمركز المختار.",
+                                fontSize = 11.sp,
+                                color = Color(0xFFC8E6C9),
+                                textAlign = TextAlign.Right,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(18.dp))
+                }
+            }
+
+            // 4. LEAGUES HORIZONTAL SELECTION PILLS
             Text(
-                text = "اختر الفريق الذي تود تدريبه:",
-                fontSize = 16.sp,
+                text = "اختر دوري التنافس الممتاز المفضل:",
+                fontSize = 15.sp,
                 fontWeight = FontWeight.Bold,
-                color = Color(0xFFD1E4FF),
+                color = Color(0xFF90CAF9),
                 modifier = Modifier.align(Alignment.End)
             )
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                leaguesList.forEach { (code, nameAr, nameEn) ->
+                    val isSelected = selectedLeague == code
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(if (isSelected) Color(0xFF0288D1) else Color(0xFF1E252E))
+                            .border(1.dp, if (isSelected) Color(0xFF29B6F6) else Color(0xFF37474F), RoundedCornerShape(20.dp))
+                            .clickable { selectedLeague = code }
+                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                            .testTag("league_tab_$code"),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(text = nameAr, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text(text = nameEn, color = Color(0xFFB0BEC5), fontSize = 10.sp)
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(18.dp))
+
+            // 5. CLUBS FROM FILTERED LEAGUE
             Text(
-                text = "Select your starting club",
-                fontSize = 12.sp,
-                color = Color(0xFFC2C7CF),
-                modifier = Modifier.align(Alignment.Start)
+                text = "اختر النادي البداية المفضل:",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF90CAF9),
+                modifier = Modifier.align(Alignment.End)
             )
+            Spacer(modifier = Modifier.height(8.dp))
 
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Display club options cards
-            initialClubs.forEach { (id, name, desc) ->
+            val currentClubsList = clubsByLeague[selectedLeague] ?: emptyList()
+            currentClubsList.forEach { (id, name, desc) ->
                 val isSelected = selectedClubId == id
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 5.dp)
+                        .padding(vertical = 4.dp)
                         .clickable { selectedClubId = id }
                         .testTag("club_select_$id"),
                     colors = CardDefaults.cardColors(
-                        containerColor = if (isSelected) Color(0xFF1E252E) else Color(0xFF1C1B1F)
+                        containerColor = if (isSelected) Color(0xFF1E2C3B) else Color(0xFF161C22)
                     ),
                     border = BorderStroke(
                         width = if (isSelected) 1.5.dp else 1.dp,
-                        color = if (isSelected) Color(0xFFD1E4FF) else Color(0xFF43474E)
+                        color = if (isSelected) Color(0xFF90CAF9) else Color(0xFF263238)
                     ),
-                    shape = RoundedCornerShape(16.dp)
+                    shape = RoundedCornerShape(12.dp)
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(16.dp),
+                            .padding(14.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Column {
-                            Text(text = name, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                            Text(text = desc, fontSize = 12.sp, color = Color(0xFFC2C7CF))
+                            Text(text = name, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                            Text(text = desc, fontSize = 11.sp, color = Color(0xFF90A4AE))
                         }
                         RadioButton(
                             selected = isSelected,
                             onClick = { selectedClubId = id },
                             colors = RadioButtonDefaults.colors(
-                                selectedColor = Color(0xFFD1E4FF),
-                                unselectedColor = Color(0xFF43474E)
+                                selectedColor = Color(0xFF90CAF9),
+                                unselectedColor = Color(0xFF37474F)
                             )
                         )
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(30.dp))
+            Spacer(modifier = Modifier.height(24.dp))
 
+            // 6. ACTION LAUNCH BUTTON
             Button(
-                onClick = { if (managerName.trim().isNotEmpty()) onSetupFinished(managerName, selectedClubId) },
-                enabled = managerName.trim().isNotEmpty(),
+                onClick = {
+                    if (nameInput.trim().isNotEmpty()) {
+                        onSetupFinished(
+                            nameInput.trim(),
+                            selectedClubId,
+                            careerMode,
+                            playerPosition,
+                            selectedLeague
+                        )
+                    }
+                },
+                enabled = nameInput.trim().isNotEmpty(),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFFD1E4FF),
-                    contentColor = Color(0xFF003355),
-                    disabledContainerColor = Color(0xFF1E252E),
-                    disabledContentColor = Color(0xFF43474E)
+                    containerColor = Color(0xFFFB8C00),
+                    contentColor = Color.White,
+                    disabledContainerColor = Color(0xFF263238),
+                    disabledContentColor = Color(0xFF546E7A)
                 ),
+                shape = RoundedCornerShape(16.dp),
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(52.dp)
-                    .testTag("submit_coach_profile"),
-                shape = RoundedCornerShape(16.dp)
+                    .testTag("setup_submit_btn")
             ) {
                 Text(
-                    text = "توقيع العقد المالي والبدء كمدرب ✍️",
-                    fontSize = 16.sp,
+                    text = if (careerMode == "Player") "اصنع بطل الملاعب الذهبي وأبرم عقدك! ⚽✍️" else "توقيع الميزانية والبدء كمدرب تكتيكي! 👑✍️",
+                    fontSize = 15.sp,
                     fontWeight = FontWeight.Bold
                 )
             }
@@ -428,7 +690,8 @@ fun HomeScreen(
     onStartMatch: () -> Unit,
     onQuickSim: () -> Unit,
     onAdvanceWeek: () -> Unit,
-    onSkipSeason: () -> Unit
+    onSkipSeason: () -> Unit,
+    onSelectSponsor: (String) -> Unit
 ) {
     if (userClub == null) return
 
@@ -446,13 +709,14 @@ fun HomeScreen(
             .padding(16.dp)
     ) {
         item {
-            // Manager Card
+            // Adaptive Profile Card
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(bottom = 16.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF1A1C1E)),
-                border = BorderStroke(1.dp, Color(0xFF43474E))
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E252E)),
+                border = BorderStroke(1.dp, Color(0xFF37474F)),
+                shape = RoundedCornerShape(16.dp)
             ) {
                 Row(
                     modifier = Modifier.padding(16.dp),
@@ -460,20 +724,20 @@ fun HomeScreen(
                 ) {
                     val initials = if (career.managerName.isNotBlank()) {
                         career.managerName.split(" ").filter { it.isNotBlank() }.map { it.take(1) }.joinToString("").take(2).uppercase()
-                    } else "KA"
+                    } else "PL"
 
                     Box(
                         modifier = Modifier
-                            .size(50.dp)
-                            .background(Color(0xFFD1E4FF), CircleShape)
-                            .border(1.dp, Color(0xFF43474E), CircleShape),
+                            .size(54.dp)
+                            .background(Color(0xFF90CAF9), CircleShape)
+                            .border(1.5.dp, Color(0xFF1565C0), CircleShape),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
                             text = initials,
-                            fontSize = 16.sp,
+                            fontSize = 18.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color(0xFF003355)
+                            color = Color(0xFF0D47A1)
                         )
                     }
 
@@ -482,14 +746,15 @@ fun HomeScreen(
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = career.managerName,
-                            fontSize = 16.sp,
+                            fontSize = 17.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color.White
                         )
                         Text(
-                            text = "مدرب فريق ${userClub.nameAr}",
+                            text = if (career.careerMode == "Player") "لاعب نادي ${userClub.nameAr} (${career.playerPosition}) ⚽" else "مدرب نادي ${userClub.nameAr} 👑",
                             fontSize = 12.sp,
-                            color = Color(0xFFC2C7CF)
+                            color = Color(0xFFB0BEC5),
+                            fontWeight = FontWeight.SemiBold
                         )
                     }
 
@@ -497,33 +762,414 @@ fun HomeScreen(
                         horizontalAlignment = Alignment.End,
                         verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        // Budget Capsule
+                        // Budget / Salary Capsule
                         Box(
                             modifier = Modifier
-                                .background(Color(0xFF1E252E), RoundedCornerShape(12.dp))
-                                .border(1.dp, Color(0xFF43474E), RoundedCornerShape(12.dp))
+                                .background(Color(0xFF0D47A1), RoundedCornerShape(12.dp))
+                                .border(1.dp, Color(0xFF1976D2), RoundedCornerShape(12.dp))
                                 .padding(horizontal = 10.dp, vertical = 4.dp)
                         ) {
                             Text(
-                                text = "$${career.budget / 1_000_000}M",
-                                fontSize = 13.sp,
+                                text = if (career.careerMode == "Player") "راتب: $25K" else "$${career.budget / 1_000_000}M",
+                                fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Color(0xFFD1E4FF)
+                                color = Color.White
                             )
                         }
 
                         // Season Badge
                         Box(
                             modifier = Modifier
-                                .background(Color(0xFF38495C), RoundedCornerShape(8.dp))
+                                .background(Color(0xFF455A64), RoundedCornerShape(8.dp))
                                 .padding(horizontal = 8.dp, vertical = 2.dp)
                         ) {
                             Text(
-                                text = "السنة ${career.season}",
+                                text = "موسم ${career.season}",
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = Color.White
                             )
+                        }
+                    }
+                }
+            }
+        }
+
+        item {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 16.dp)
+                    .testTag("jersey_sponsor_panel"),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF1B232D)),
+                border = BorderStroke(1.2.dp, Color(0xFF42A5F5)),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .background(Color(0xFF0288D1), RoundedCornerShape(6.dp))
+                                .padding(horizontal = 8.dp, vertical = 2.dp)
+                        ) {
+                            Text(text = "الرعاة والاستشهار 👕", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        }
+                        Text(
+                            text = "عقد رعاية قميص النادي / Jersey Shirt Sponsor",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF90CAF9)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "وقع عقد رعاية سنوي لقميص فريقك للحصول على دفعات تمويل مالية أسبوعية في ميزانيتك، تساعدك على الاستثمار في شراء نجوم دوري World Soccer Champs الممتازين أو ترقية مرافق النادي!",
+                        fontSize = 11.sp,
+                        color = Color(0xFFECEFF1),
+                        textAlign = TextAlign.Right,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    val activeSponsor = career.selectedSponsor
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Current status banner
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFF111318), RoundedCornerShape(10.dp))
+                            .border(1.dp, Color(0xFF37474F), RoundedCornerShape(10.dp))
+                            .padding(10.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = when (activeSponsor) {
+                                    "Aramco" -> "أرامكو السعودية 🇸🇦 ($350k/أسبوع)"
+                                    "Emirates" -> "طيران الإمارات ✈️ ($250k/أسبوع)"
+                                    "Spotify" -> "سبوتيفاي الموسيقية 🎵 ($180k/أسبوع + $100k بونص فوز)"
+                                    "Nike" -> "نايكي الرياضية ✔️ ($120k/أسبوع)"
+                                    else -> "بدون راعي نشط حالياً 🛑"
+                                },
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (activeSponsor != "None") Color(0xFF81C784) else Color(0xFFFFB74D)
+                            )
+                            Text(
+                                text = "الراعي الرسمي لقميص الفريق:",
+                                fontSize = 11.sp,
+                                color = Color.LightGray
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = "العروض والخيارات الاستثمارية المتاحة للتوقيع الفوري:",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF90CAF9),
+                        modifier = Modifier.fillMaxWidth(),
+                        textAlign = TextAlign.Right
+                    )
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    // Sparking offer list rows layout
+                    val sponsorsList = listOf(
+                        Triple("Aramco", "أرامكو السعودية 🇸🇦", "تمويل أسبوعي بقيمة $350k دفعة نقدية."),
+                        Triple("Emirates", "طيران الإمارات ✈️", "تمويل أسبوعي بقيمة $250k مضمون بدون حدود."),
+                        Triple("Spotify", "سبوتيفاي الموسيقية 🎵", "$180k أسبوعياً + $100k حافز فوز بالمباريات."),
+                        Triple("Nike", "نايكي الرياضية ✔️", "$120k أسبوعياً دفعة أسبوعية فنية مخفضة.")
+                    )
+
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        sponsorsList.forEach { (key, name, desc) ->
+                            val isCurrent = activeSponsor == key
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(
+                                        if (isCurrent) Color(0xFF0D47A1) else Color(0xFF161C24),
+                                        RoundedCornerShape(8.dp)
+                                    )
+                                    .border(
+                                        1.dp,
+                                        if (isCurrent) Color(0xFF42A5F5) else Color(0xFF37474F),
+                                        RoundedCornerShape(8.dp)
+                                    )
+                                    .clickable { onSelectSponsor(key) }
+                                    .padding(10.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    if (isCurrent) {
+                                        Box(
+                                            modifier = Modifier
+                                                .background(Color(0xFF2E7D32), RoundedCornerShape(4.dp))
+                                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                                        ) {
+                                            Text(text = "موقَّع حالياً ✔️", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                        }
+                                    } else {
+                                        Box(
+                                            modifier = Modifier
+                                                .background(Color(0xFF00E676), RoundedCornerShape(4.dp))
+                                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                                        ) {
+                                            Text(text = "توقيع العقد ✍️", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color(0xFF111318))
+                                        }
+                                    }
+                                    Column(horizontalAlignment = Alignment.End) {
+                                        Text(text = name, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                        Text(text = desc, fontSize = 10.sp, color = Color.LightGray, textAlign = TextAlign.Right)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        item {
+            // Interactive Penalty Shootout Training Mini-Game Block
+            var penaltyGameOpen by remember { mutableStateOf(false) }
+            var penaltyStage by remember { mutableStateOf("start") } // "start", "playing", "result"
+            var shootoutUserScore by remember { mutableStateOf(0) }
+            var shootoutAiScore by remember { mutableStateOf(0) }
+            var currentRound by remember { mutableStateOf(1) }
+            var roundResultText by remember { mutableStateOf("") }
+            var lastShotDirection by remember { mutableStateOf("") }
+            var keeperSaved by remember { mutableStateOf(false) }
+
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 16.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF112213)),
+                border = BorderStroke(1.2.dp, Color(0xFF2E7D32)),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .background(Color(0xFF2E7D32), RoundedCornerShape(8.dp))
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Text(text = "تمارين حيوية 🎮", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        }
+                        Text(
+                            text = "ضربات جزاء تكتيكية 🎯",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF81C784)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "جيم كروي سريع! تسدد ركلات الترجيح والتغلب على الحارس الذكي لربح التحدي وتطوير مستواك كلاعب أو كمدرب للتسجيل التاريخي!",
+                        fontSize = 11.sp,
+                        color = Color(0xFFC8E6C9),
+                        textAlign = TextAlign.Right,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    if (!penaltyGameOpen) {
+                        Button(
+                            onClick = {
+                                penaltyGameOpen = true
+                                penaltyStage = "start"
+                                shootoutUserScore = 0
+                                shootoutAiScore = 0
+                                currentRound = 1
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32), contentColor = Color.White),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("العب ضربات تدريبية سريعة ⚽", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        }
+                    } else {
+                        HorizontalDivider(color = Color(0xFF2E7D32).copy(alpha = 0.4f), modifier = Modifier.padding(vertical = 10.dp))
+                        
+                        when (penaltyStage) {
+                            "start" -> {
+                                Text(
+                                    text = "الركلة رقم ($currentRound من 5) - اختر زاوية التسديد الآن لمخادعة الحارس المتربص:",
+                                    fontSize = 12.sp,
+                                    color = Color.White,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    val directions = listOf(
+                                        "Left" to "الزاوية اليسرى 🥅⬅️",
+                                        "Center" to "المنتصف المضمون 🥅⬆️",
+                                        "Right" to "الزاوية اليمنى 🥅➡️"
+                                    )
+                                    directions.forEach { (dirCode, label) ->
+                                        Button(
+                                            onClick = {
+                                                lastShotDirection = label
+                                                val keeperChoice = listOf("Left", "Center", "Right").random()
+                                                if (keeperChoice == dirCode) {
+                                                    keeperSaved = true
+                                                    roundResultText = "تصدي أسطوري! توقع حارس الذكاء الاصطناعي زاويتك بدقة كاسحة وطار لها باحتراف! 🧤"
+                                                    shootoutAiScore += 1
+                                                } else {
+                                                    keeperSaved = false
+                                                    roundResultText = "ججججووووول! سددت كرة خيالية دائرية مزقت الشباك والحارس قفز للاتجاه الآخر! ⚽🥅"
+                                                    shootoutUserScore += 1
+                                                }
+                                                penaltyStage = "result"
+                                            },
+                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1B5E20)),
+                                            modifier = Modifier.weight(1f),
+                                            shape = RoundedCornerShape(8.dp),
+                                            contentPadding = PaddingValues(vertical = 10.dp)
+                                        ) {
+                                            Text(label, fontSize = 10.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+                                        }
+                                    }
+                                }
+                            }
+                            "result" -> {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(
+                                            if (keeperSaved) Color(0xFFC62828).copy(alpha = 0.15f) else Color(0xFF2E7D32).copy(alpha = 0.15f),
+                                            RoundedCornerShape(8.dp)
+                                        )
+                                        .padding(12.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text(
+                                            text = if (keeperSaved) "❌ ركلة ضائعة" else "🥅 هدف لا يصد ولا يرد!",
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (keeperSaved) Color(0xFFE57373) else Color(0xFF81C784)
+                                        )
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(
+                                            text = roundResultText,
+                                            fontSize = 12.sp,
+                                            color = Color.White,
+                                            textAlign = TextAlign.Center
+                                        )
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(14.dp))
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "النتيجة: المسدد $shootoutUserScore - الحارس $shootoutAiScore",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White
+                                    )
+                                    Button(
+                                        onClick = {
+                                            if (currentRound < 5) {
+                                                currentRound += 1
+                                                penaltyStage = "start"
+                                            } else {
+                                                penaltyStage = "completed"
+                                            }
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
+                                        shape = RoundedCornerShape(8.dp)
+                                    ) {
+                                        Text(if (currentRound < 5) "الركلة التالية ➡️" else "رؤية النتيجة النهائية 🏁", fontSize = 11.sp)
+                                    }
+                                }
+                            }
+                            "completed" -> {
+                                Column(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Text(
+                                        text = "🏁 انتهى الجيم البسيط والتحدي السريع!",
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White
+                                    )
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Text(
+                                        text = if (shootoutUserScore > shootoutAiScore) {
+                                            "فوز تكتيكي باهر! 🏆 تفوقت على الحارس بكل ثقة واستحققت إشادة المدرب والمشجعين!"
+                                        } else if (shootoutUserScore == shootoutAiScore) {
+                                            "التعادل سيد الأحكام المثير! أداء ممتاز وقدرة تكتيكية رائعة بالإنهاء كالمحترفين."
+                                        } else {
+                                            "للأسف، تصدى الحارس لمعظم كراتك الرائعة هذه المرة! استمر في التمرين لتحسّن مهارات التسديد الدقيق 👊"
+                                        },
+                                        fontSize = 12.sp,
+                                        color = Color(0xFFC8E6C9),
+                                        textAlign = TextAlign.Center
+                                    )
+
+                                    Spacer(modifier = Modifier.height(14.dp))
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        Button(
+                                            onClick = {
+                                                penaltyStage = "start"
+                                                shootoutUserScore = 0
+                                                shootoutAiScore = 0
+                                                currentRound = 1
+                                            },
+                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
+                                            modifier = Modifier.weight(1f),
+                                            shape = RoundedCornerShape(8.dp)
+                                        ) {
+                                            Text("لعب مرة ثانية 🔁", fontSize = 11.sp)
+                                        }
+                                        Button(
+                                            onClick = { penaltyGameOpen = false },
+                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF424242)),
+                                            modifier = Modifier.weight(1f),
+                                            shape = RoundedCornerShape(8.dp)
+                                        ) {
+                                            Text("إنهاء الجيم ❌", fontSize = 11.sp)
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -965,6 +1611,333 @@ fun SquadScreen(
                         fontSize = 11.sp,
                         color = Color(0xFFD1E4FF)
                     )
+                }
+            }
+        }
+
+        item {
+            val teamChemistry = remember(userSquad) {
+                if (userSquad.isEmpty()) 0
+                else {
+                    var gkCount = 0
+                    var defCount = 0
+                    var midCount = 0
+                    var attCount = 0
+                    for (p in userSquad) {
+                        when (p.position) {
+                            "GK" -> gkCount++
+                            "DEF" -> defCount++
+                            "MID" -> midCount++
+                            "ATT" -> attCount++
+                        }
+                    }
+                    var chem = 100
+                    if (gkCount < 1) chem -= 25
+                    if (defCount < 3) chem -= (3 - defCount).coerceAtLeast(0) * 10
+                    if (midCount < 3) chem -= (3 - midCount).coerceAtLeast(0) * 10
+                    if (attCount < 2) chem -= (2 - attCount).coerceAtLeast(0) * 10
+                    chem.coerceIn(20, 100)
+                }
+            }
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 12.dp)
+                    .testTag("team_chemistry_card"),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF131F2E)),
+                border = BorderStroke(1.2.dp, if (teamChemistry >= 70) Color(0xFF81C784) else Color(0xFFE57373)),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .background(if (teamChemistry >= 70) Color(0xFF1B5E20) else Color(0xFFB71C1C), RoundedCornerShape(6.dp))
+                                .padding(horizontal = 8.dp, vertical = 2.dp)
+                        ) {
+                            Text(text = "مؤشر التناغم 🧪", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        }
+                        Text(
+                            text = "تجانس التشكيلة الكروية / Team Chemistry",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (teamChemistry >= 70) Color(0xFF81C784) else Color(0xFFE57373)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+                    
+                    Text(
+                        text = "يقيس هذا المؤشر توازن مراكز تشكيلة لاعبيك (GK, DEF, MID, ATT). الكيمياء المرتفعة تمنحك أفضلية حاسمة لترجيح كفة خياراتك وإحراز الأهداف أثناء هجمات اللقاء!",
+                        fontSize = 11.sp,
+                        color = Color(0xFFCFD8DC),
+                        textAlign = TextAlign.Right,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Text(
+                            text = "$teamChemistry%",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                        LinearProgressIndicator(
+                            progress = teamChemistry / 100f,
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(8.dp)
+                                .clip(RoundedCornerShape(4.dp)),
+                            color = if (teamChemistry >= 70) Color(0xFF81C784) else Color(0xFFE57373),
+                            trackColor = Color(0xFF2C3949)
+                        )
+                    }
+                }
+            }
+        }
+
+        item {
+            // New Feature: Elegant Squad Form & Ranking Dashboard Board
+            var boardSortType by remember { mutableStateOf("Form") } // "Form", "Rating", "Stats"
+
+            val sortedPlayers = remember(userSquad, boardSortType) {
+                when (boardSortType) {
+                    "Form" -> userSquad.sortedByDescending { (it.rating * 0.4f) + (it.form * 4f) + (it.energy * 0.3f) }
+                    "Rating" -> userSquad.sortedByDescending { it.rating }
+                    else -> userSquad.sortedByDescending { it.goals * 10 + it.assists * 5 + it.rating * 0.1f }
+                }
+            }
+
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 16.dp)
+                    .testTag("squad_ranking_board"),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF131F2E)),
+                border = BorderStroke(1.2.dp, Color(0xFF1E88E5)),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    // Header
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .background(Color(0xFF0D47A1), RoundedCornerShape(6.dp))
+                                .padding(horizontal = 8.dp, vertical = 2.dp)
+                        ) {
+                            Text(text = "لوحة تكتيكية 📊", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        }
+                        Text(
+                            text = "لوحة تقييم وجاهزية الفريق",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF90CAF9)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "نظرة شمولية احترافية للمدير الفني لفلترة أوراق الفريق الرابحة وتحديد النجوم والمساهمين الأكثر جاهزية للمواجهات القادمة.",
+                        fontSize = 11.sp,
+                        color = Color(0xFFCFD8DC),
+                        textAlign = TextAlign.Right,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Mode Toggles
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFF1E2836), RoundedCornerShape(10.dp))
+                            .padding(2.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        val boardOptions = listOf(
+                            "Form" to "⚡ الجاهزية والبدن",
+                            "Rating" to "⭐ الأفضل تقييماً",
+                            "Stats" to "⚽ المساهمات والأهداف"
+                        )
+                        boardOptions.forEach { (typeKey, labelStr) ->
+                            val isSelected = boardSortType == typeKey
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (isSelected) Color(0xFF0D47A1) else Color.Transparent)
+                                    .clickable { boardSortType = typeKey }
+                                    .padding(vertical = 8.dp, horizontal = 4.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = labelStr,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isSelected) Color.White else Color(0xFF90A4AE),
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // List top 4 ranked players in this view
+                    Text(
+                        text = "ترتيب لاعبي فريقك الحالي حسب اختيارك:",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF90CAF9),
+                        modifier = Modifier.align(Alignment.End)
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    sortedPlayers.take(4).forEachIndexed { index, p ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp)
+                                .background(Color(0xFF172435), RoundedCornerShape(8.dp))
+                                .padding(horizontal = 10.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            // Left side stats / info
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                // Position capsule
+                                Box(
+                                    modifier = Modifier
+                                        .background(Color(0xFF263238), RoundedCornerShape(4.dp))
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                ) {
+                                    Text(text = p.position, fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color(0xFFB0BEC5))
+                                }
+                                Spacer(modifier = Modifier.width(6.dp))
+
+                                Column {
+                                    Text(text = p.name, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            text = "طاقة: ${p.energy}% | فورم: ${p.form}/10",
+                                            fontSize = 10.sp,
+                                            color = Color(0xFF90A4AE)
+                                        )
+                                        if (p.goals > 0 || p.assists > 0) {
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(
+                                                text = "⚽ ${p.goals} | 🅰️ ${p.assists}",
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color(0xFFFFB300)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Right side rank indicators
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .background(
+                                            when (index) {
+                                                0 -> Color(0xFFFFD54F) // Gold
+                                                1 -> Color(0xFFB0BEC5) // Silver
+                                                2 -> Color(0xFFFFB74D) // Bronze
+                                                else -> Color(0xFF37474F)
+                                            },
+                                            CircleShape
+                                        )
+                                        .size(24.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "${index + 1}",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (index < 3) Color.Black else Color.White
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "OVR ${p.rating}",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF90CAF9)
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Tactical Advisory Corner
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF101B26)),
+                        border = BorderStroke(1.dp, Color(0xFF1E88E5).copy(alpha = 0.5f)),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.Info,
+                                    contentDescription = "info",
+                                    tint = Color(0xFFFFCC00),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "توصية المستشار التكتيكي للمدير الفني 🧠",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFFFFD54F)
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = when (boardSortType) {
+                                    "Form" -> {
+                                        if (sortedPlayers.isNotEmpty()) {
+                                            "التحليل الفني: ننصحك بالاعتماد على اللاعب [${sortedPlayers.first().name}] كمحرك أساسي للمباراة القادمة لامتلاكه طاقة كروية كاملة (${sortedPlayers.first().energy}%) ومستويات تصاعدية ممتازة!"
+                                        } else "البيانات غير كافية حالياً."
+                                    }
+                                    "Rating" -> {
+                                        if (sortedPlayers.isNotEmpty()) {
+                                            "رؤية فنية: النجم الأرفع والأعلى مهارة بفريقك هو [${sortedPlayers.first().name}] بتقييم كاسح (${sortedPlayers.first().rating} OVR). ابني خطتك التكتيكية لتمرير الكرات بشكل يبرز موهبته وصناعته للأهداف."
+                                        } else "البيانات غير كافية."
+                                    }
+                                    else -> {
+                                        val topScorer = sortedPlayers.maxByOrNull { it.goals }
+                                        if (topScorer != null && topScorer.goals > 0) {
+                                            "تقرير التسجيل: القناص [${topScorer.name}] يقدم مستويات تهديفية مذهلة بمجموع (${topScorer.goals}) أهداف حاسمة! استمر في إشراكه هجومياً للحفاظ على الزخم التهديفي للمجموعة."
+                                        } else {
+                                            "لم يبدأ أي لاعب بالتسجيل في الدوري بعد. حفّز لاعبي الهجوم في التمرين والتدريبات بالاعتماد على تسديدات دقيقة!"
+                                        }
+                                    }
+                                },
+                                fontSize = 11.sp,
+                                color = Color(0xFFCFD8DC),
+                                textAlign = TextAlign.Right,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -2043,6 +3016,7 @@ fun InboxScreen(
 // ---------------- 3D-STYLE GREEN CANVAS MATCH HIGHLIGHTS PLAYGROUND SCREEN ----------------
 @Composable
 fun MatchSimScreen(
+    viewModel: CareerViewModel,
     matchPlayState: MatchPlayState,
     userClub: ClubEntity?,
     opponentClub: ClubEntity?,
@@ -2074,6 +3048,42 @@ fun MatchSimScreen(
                     .padding(16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
+                // Playback speed tuner (1x, 2x, 4x)
+                val activeSpeed by viewModel.matchSpeed.collectAsStateWithLifecycle()
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "سرعة المحاكاة / Sim Speed:",
+                        fontSize = 11.sp,
+                        color = Color(0xFFC2C7CF),
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        listOf(1f to "1x ⏱️", 2f to "2x ⚡", 4f to "4x 🚀").forEach { (v, label) ->
+                            val isSel = activeSpeed == v
+                            Box(
+                                modifier = Modifier
+                                    .background(if (isSel) Color(0xFFD1E4FF) else Color(0xFF1E252E), RoundedCornerShape(6.dp))
+                                    .border(1.dp, if (isSel) Color(0xFFD1E4FF) else Color(0xFF43474E), RoundedCornerShape(6.dp))
+                                    .clickable { viewModel.changeMatchSpeed(v) }
+                                    .padding(horizontal = 10.dp, vertical = 5.dp)
+                            ) {
+                                Text(
+                                    text = label,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isSel) Color(0xFF003355) else Color.White
+                                )
+                            }
+                        }
+                    }
+                }
+
                 // Header scoreboard
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -2247,7 +3257,25 @@ fun MatchSimScreen(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                // Ambient continuous skip option
+                Spacer(modifier = Modifier.height(10.dp))
+                Button(
+                    onClick = { viewModel.skipRemainingMatch() },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2C2512), contentColor = Color(0xFFFFD54F)),
+                    border = BorderStroke(1.dp, Color(0xFF9E7700)),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth().testTag("skip_highlights_button")
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "⚡ تخطي ومحاكاة فورية لنهاية اللقاء | Skip & Instantly Finish Match",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
 
                 // Tactical decision buttons
                 AnimatedVisibility(
@@ -2271,6 +3299,24 @@ fun MatchSimScreen(
                                     textAlign = TextAlign.Center,
                                     modifier = Modifier.fillMaxWidth()
                                 )
+
+                                Spacer(modifier = Modifier.height(6.dp))
+                                val teamChemistry by viewModel.teamChemistry.collectAsStateWithLifecycle()
+                                val chemBonus = ((teamChemistry - 70) / 5).coerceIn(-10, 6)
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.CenterHorizontally)
+                                        .background(if (chemBonus >= 0) Color(0x3381C784) else Color(0x33E57373), RoundedCornerShape(6.dp))
+                                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                                ) {
+                                    Text(
+                                        text = "تأثير كيمياء تشكيلة النادي: ${if (chemBonus >= 0) "+$chemBonus%" else "$chemBonus%"} فرصة حسم للمراوغة والتسديد 📊",
+                                        color = if (chemBonus >= 0) Color(0xFF81C784) else Color(0xFFE57373),
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        textAlign = TextAlign.Center
+                                    )
+                                }
 
                                 Spacer(modifier = Modifier.height(12.dp))
 
@@ -2612,6 +3658,546 @@ fun SeasonJournalScreen(
                                 )
                             }
                         }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ScoutingScreen(
+    career: CareerEntity,
+    discoveries: List<PlayerEntity>,
+    onUpgradeScout: () -> Unit,
+    onLaunchMission: (String) -> Unit,
+    onSignProdigy: (PlayerEntity) -> Unit
+) {
+    var selectedPos by remember { mutableStateOf("ANY") }
+    val scoutLevel = career.scoutLevel
+    val budget = career.budget
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        // Header Card
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E252E)),
+                border = BorderStroke(1.dp, Color(0xFF43474E)),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1.0f)) {
+                        Text(
+                            text = "مستكشف المواهب والشباب 🕵️‍♂️ | Scouting Department",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "أرسل طاقم الكشافة للتفتيش عن نجوم ومواهب صاعدة في الدوريات الأخرى وضخ دماء جديدة بالنادي.",
+                            fontSize = 12.sp,
+                            color = Color(0xFFC2C7CF)
+                        )
+                    }
+                }
+            }
+        }
+
+        // Scout Upgrade & Mission Dispatches
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                // 1. Upgrade Hired Scout Card
+                Card(
+                    modifier = Modifier.weight(1f),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF161C24)),
+                    border = BorderStroke(1.dp, Color(0xFF38495C)),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text(
+                            text = "رتبة كشّافك الحالي: ليفل ${scoutLevel}/3 🎖️",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFFD1E4FF)
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "كلما ارتفع ليفل كشّافك، زادت احتمالية عثوره على مواهب (Wonderkids) بتقييمات تقترب من 88 OVR وبدقة أعلى.",
+                            fontSize = 11.sp,
+                            color = Color(0xFF9EA3AE),
+                            lineHeight = 14.sp
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        if (scoutLevel < 3) {
+                            val upgradeCost = if (scoutLevel == 1) 2_500_000L else 5_000_000L
+                            Button(
+                                onClick = onUpgradeScout,
+                                enabled = budget >= upgradeCost,
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF005FAF)),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = "ترقية الكشاف ($${upgradeCost / 1_000_000}M) ⬆️",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                            }
+                        } else {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(Color(0xFF0F2D1F), RoundedCornerShape(8.dp))
+                                    .padding(vertical = 8.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "وصل كشّافك للرتبة العالمية القصوى! 👑",
+                                    color = Color(0xFF81C784),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // 2. Scout Mission Dispatch Card (World Soccer Champs style)
+                Card(
+                    modifier = Modifier.weight(1f),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF161C24)),
+                    border = BorderStroke(1.dp, Color(0xFF38495C)),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text(
+                            text = "إرسال بعثة تنقيب ميداني ✈️",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFFFFD180)
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        if (career.scoutingMissionActive) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(Color(0xFF2E1A05), RoundedCornerShape(8.dp))
+                                    .padding(12.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "جاري ترحال الكشافة للتفتيش عن مركز: [${career.scoutingMissionPosition}]...\nسيعودون بتقرير وافٍ الأسبوع القادم! ⏳",
+                                    color = Color(0xFFFFB74D),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    textAlign = TextAlign.Center,
+                                    lineHeight = 14.sp
+                                )
+                            }
+                        } else {
+                            Text(
+                                text = "اختر المركز الذي تبحث عنه، كلفة البعثة $200k وتستغرق أسبوعاً تكتيكياً واحداً لتكتمل:",
+                                fontSize = 11.sp,
+                                color = Color(0xFF9EA3AE),
+                                lineHeight = 13.sp
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            // Position choices chips
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                val positions = listOf("ANY" to "الكل", "ATT" to "هجوم", "MID" to "وسط", "DEF" to "دفاع")
+                                positions.forEach { (posCode, label) ->
+                                    val isSelected = selectedPos == posCode
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .background(
+                                                if (isSelected) Color(0xFFFFA726) else Color(0xFF2C323D),
+                                                RoundedCornerShape(4.dp)
+                                            )
+                                            .border(
+                                                width = 1.dp,
+                                                color = if (isSelected) Color.White else Color.Transparent,
+                                                shape = RoundedCornerShape(4.dp)
+                                            )
+                                            .clickable { selectedPos = posCode }
+                                            .padding(vertical = 6.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = label,
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (isSelected) Color.Black else Color.White
+                                        )
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Button(
+                                onClick = { onLaunchMission(selectedPos) },
+                                enabled = budget >= 200_000L,
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE65100)),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = "إرسال الكشافة ($200k) ✈️",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Title for Scouted Wonderkids list
+        item {
+            Text(
+                text = "جواهر مكتشفة جاهزة للتفاوض والتوقيع 💎 | Scout Discoveries",
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.White,
+                modifier = Modifier.padding(top = 8.dp)
+            )
+        }
+
+        if (discoveries.isEmpty()) {
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1D2027)),
+                    border = BorderStroke(1.dp, Color(0xFF38495C)),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(24.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "لا توجد مواهب مستكشفة حالياً 📭\nقم بإرسال كشافك الكروي لينقّب ثمار الملاعب ثم تقدّم للأسبوع القادم بالدوري لرؤية تقاريرهم الاستقصائية هنا!",
+                            color = Color(0xFF9EA3AE),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            textAlign = TextAlign.Center,
+                            lineHeight = 16.sp
+                        )
+                    }
+                }
+            }
+        } else {
+            items(discoveries.size) { index ->
+                val p = discoveries[index]
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF121820)),
+                    border = BorderStroke(1.dp, Color(0xFF81C784)),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(45.dp)
+                                    .background(Color(0xFF0F3D24), CircleShape)
+                                    .border(1.dp, Color(0xFF81C784), CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = p.position,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = Color(0xFF81C784)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text(
+                                    text = p.name,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = "العمر: ${p.age} سنة | السرعة: ${p.speed} | التسديد: ${p.shooting}",
+                                    fontSize = 11.sp,
+                                    color = Color(0xFF9EA3AE)
+                                )
+                            }
+                        }
+
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            // Talent overall rating star
+                            Box(
+                                modifier = Modifier
+                                    .background(Color(0xFF3E2723), RoundedCornerShape(4.dp))
+                                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        Icons.Default.Star,
+                                        contentDescription = "OVR",
+                                        tint = Color(0xFFFDD835),
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(2.dp))
+                                    Text(
+                                        text = "${p.rating} OVR",
+                                        color = Color(0xFFFDD835),
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.width(16.dp))
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text(
+                                    text = "قيمة التوقيع",
+                                    fontSize = 10.sp,
+                                    color = Color(0xFFC2C7CF)
+                                )
+                                Text(
+                                    text = "$${p.value / 1_000_000f}M",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = Color(0xFF81C784)
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Button(
+                                    onClick = { onSignProdigy(p) },
+                                    enabled = budget >= p.value,
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                    shape = RoundedCornerShape(6.dp),
+                                    modifier = Modifier.height(30.dp)
+                                ) {
+                                    Text("شراء وتوقيع ✍️", fontSize = 10.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun AcademyScreen(
+    career: CareerEntity,
+    onUpgradeAcademy: () -> Unit,
+    onPromoteProdigy: () -> Unit
+) {
+    val level = career.academyLevel
+    val budget = career.budget
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        // Academy Header
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF211D2A)),
+                border = BorderStroke(1.dp, Color(0xFF5B3E7A)),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "أكاديمية النادي للشباب 🎓 | Youth Football Academy",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "صناعة الجيل الكروي الجديد والموهوب! تعاقد مع واعدين وصغار السن (16 سنة) بترقيات عالية لإدراج صفقات مجانية خارقة للنادي.",
+                        fontSize = 12.sp,
+                        color = Color(0xFFD3C5E3)
+                    )
+                }
+            }
+        }
+
+        // Two Column Upgrade vs Produce Star Row
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                // 1. Upgrade Facilities Card
+                Card(
+                    modifier = Modifier.weight(1f),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF191421)),
+                    border = BorderStroke(1.dp, Color(0xFF50346B)),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text(
+                            text = "مستوى منشآت الأكاديمية: ليفل ${level}/5 🏫",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFFE1BEE7)
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "بترقية منشآت البراعم، يتخرج النجوم الجدد بتقييم عام (OVR) يتراوح من 75 إلى 85 ليفيدوا خطط فريقك مباشرة أو يتم بيعه بملايين فلكية في السوق.",
+                            fontSize = 11.sp,
+                            color = Color(0xFFBCAAA4),
+                            lineHeight = 14.sp
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        if (level < 5) {
+                            val upgradeCost = when (level) {
+                                1 -> 1_500_000L
+                                2 -> 3_000_000L
+                                3 -> 6_000_000L
+                                4 -> 12_000_000L
+                                else -> 0L
+                            }
+                            Button(
+                                onClick = onUpgradeAcademy,
+                                enabled = budget >= upgradeCost,
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7B1FA2)),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = "ترقية مرافق الأكاديمية ($${upgradeCost / 1_000_000}M) 🏫",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                            }
+                        } else {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(Color(0xFF2E004B), RoundedCornerShape(8.dp))
+                                    .padding(vertical = 8.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "وصلت أكاديميتك لأفضل ليفل عالمي! 🏆",
+                                    color = Color(0xFFE040FB),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // 2. Promote Graduate Prodigy Card
+                Card(
+                    modifier = Modifier.weight(1f),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF191421)),
+                    border = BorderStroke(1.dp, Color(0xFF50346B)),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text(
+                            text = "تصعيد برعم كروي جديد 🎓",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFFFFF59D)
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "قم بالتصعيد والتعاقد الفوري مع الموهوب الخارق القادم بعمر 16/17 سنة. كلفة استثمار الأكاديمية للتصفية $250k فقط!",
+                            fontSize = 11.sp,
+                            color = Color(0xFFBCAAA4),
+                            lineHeight = 14.sp
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        
+                        Button(
+                            onClick = onPromoteProdigy,
+                            enabled = budget >= 250_000L,
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFBC02D)),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = "تصعيد وتوقيع برعم ($250k) ✍️",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.Black
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Quality advisory table based on level
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF0C0E12)),
+                border = BorderStroke(1.dp, Color(0xFF38495C)),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Text(
+                        text = "ℹ️ معلومات خريجي الأكاديمية تكتيكياً:",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    listOf(
+                        "ليفل 1: براعم بجودة من 52 - 58 OVR (رسوم منخفضة)",
+                        "ليفل 2: براعم بجودة من 58 - 64 OVR",
+                        "ليفل 3: براعم بجودة من 64 - 70 OVR (واعد جداً)",
+                        "ليفل 4: مواهب بجودة من 70 - 76 OVR",
+                        "ليفل 5: نجوم عالمية بجودة من 76 - 85 OVR (فخر الأكاديميات)"
+                    ).forEachIndexed { index, description ->
+                        val isCurrent = level == (index + 1)
+                        Text(
+                            text = if (isCurrent) "👉 $description (المستوى الحالي)" else "⚪ $description",
+                            fontSize = 11.sp,
+                            color = if (isCurrent) Color(0xFFE040FB) else Color(0xFF9EA3AE),
+                            fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
+                            modifier = Modifier.padding(vertical = 2.dp)
+                        )
                     }
                 }
             }

@@ -57,107 +57,170 @@ class CareerRepository(private val careerDao: CareerDao) {
     suspend fun getPlayerById(playerId: Int) = careerDao.getPlayerById(playerId)
     suspend fun getClubById(clubId: Int) = careerDao.getClubById(clubId)
 
-    suspend fun initializeNewCareer(managerName: String, selectedClubId: Int) {
+    suspend fun initializeNewCareer(
+        managerName: String,
+        selectedClubId: Int,
+        careerMode: String = "Manager",
+        playerPosition: String = "ATT",
+        leagueCode: String = "SPL"
+    ) {
         careerDao.clearCareerData()
 
-        // 1. Predefined Clubs list
+        // 1. Predefined 36 Clubs across 6 Leagues (Saudi Pro League + Big Five European Leagues)
         val clubs = listOf(
-            ClubEntity(id = 1, name = "Al-Hilal", nameAr = "الهلال", shortName = "HIL", primaryColor = 0xFF0D47A1, secondaryColor = 0xFF1976D2, reputation = 86, budget = 120_000_000L),
-            ClubEntity(id = 2, name = "Al-Nassr", nameAr = "النصر", shortName = "NAS", primaryColor = 0xFFFFEB3B, secondaryColor = 0xFF004D40, reputation = 84, budget = 110_000_000L),
-            ClubEntity(id = 3, name = "Al-Ittihad", nameAr = "الاتحاد", shortName = "ITT", primaryColor = 0xFF212121, secondaryColor = 0xFFFFD700, reputation = 82, budget = 100_000_000L),
-            ClubEntity(id = 4, name = "Al-Ahli", nameAr = "الأهلي", shortName = "AHL", primaryColor = 0xFF1B5E20, secondaryColor = 0xFFFFFFFF, reputation = 81, budget = 90_000_000L),
-            ClubEntity(id = 5, name = "Real Madrid", nameAr = "ريال مدريد", shortName = "RMA", primaryColor = 0xFFECEFF1, secondaryColor = 0xFF1A237E, reputation = 93, budget = 180_000_000L),
-            ClubEntity(id = 6, name = "Barcelona", nameAr = "برشلونة", shortName = "FCB", primaryColor = 0xFFB71C1C, secondaryColor = 0xFF0D47A1, reputation = 90, budget = 130_000_000L),
-            ClubEntity(id = 7, name = "Manchester City", nameAr = "مانشستر سيتي", shortName = "MCI", primaryColor = 0xFF80D8FF, secondaryColor = 0xFFECEFF1, reputation = 92, budget = 190_000_000L),
-            ClubEntity(id = 8, name = "Liverpool", nameAr = "ليفربول", shortName = "LIV", primaryColor = 0xFFD84315, secondaryColor = 0xFFFFD54F, reputation = 89, budget = 140_000_000L),
-            ClubEntity(id = 9, name = "Bayern Munich", nameAr = "بايرن ميونخ", shortName = "FCB", primaryColor = 0xFFE53935, secondaryColor = 0xFFECEFF1, reputation = 88, budget = 135_000_000L),
-            ClubEntity(id = 10, name = "Paris Saint-Germain", nameAr = "باريس سان جيرمان", shortName = "PSG", primaryColor = 0xFF0F172A, secondaryColor = 0xFFE2E8F0, reputation = 87, budget = 150_000_000L)
+            // SPL (Saudi Pro League)
+            ClubEntity(id = 1, name = "Al-Hilal", nameAr = "الهلال 👑", shortName = "HIL", primaryColor = 0xFF0D47A1, secondaryColor = 0xFF1976D2, reputation = 86, budget = 120_000_000L, league = "SPL"),
+            ClubEntity(id = 2, name = "Al-Nassr", nameAr = "النصر 💛", shortName = "NAS", primaryColor = 0xFFFFEB3B, secondaryColor = 0xFF004D40, reputation = 84, budget = 110_000_000L, league = "SPL"),
+            ClubEntity(id = 3, name = "Al-Ittihad", nameAr = "الاتحاد 🖤", shortName = "ITT", primaryColor = 0xFF212121, secondaryColor = 0xFFFFD700, reputation = 82, budget = 100_000_000L, league = "SPL"),
+            ClubEntity(id = 4, name = "Al-Ahli", nameAr = "الأهلي 💚", shortName = "AHL", primaryColor = 0xFF1B5E20, secondaryColor = 0xFFFFFFFF, reputation = 81, budget = 90_000_000L, league = "SPL"),
+            ClubEntity(id = 5, name = "Al-Shabab", nameAr = "الشباب 🤍", shortName = "SHB", primaryColor = 0xFF757575, secondaryColor = 0xFF212121, reputation = 78, budget = 65_000_000L, league = "SPL"),
+            ClubEntity(id = 6, name = "Al-Ettifaq", nameAr = "الاتفاق ❤️", shortName = "ETF", primaryColor = 0xFFD84315, secondaryColor = 0xFF1B5E20, reputation = 77, budget = 50_000_000L, league = "SPL"),
+
+            // EPL (English Premier League)
+            ClubEntity(id = 7, name = "Manchester City", nameAr = "مانشستر سيتي 🩵", shortName = "MCI", primaryColor = 0xFF80D8FF, secondaryColor = 0xFFECEFF1, reputation = 92, budget = 190_000_000L, league = "EPL"),
+            ClubEntity(id = 8, name = "Arsenal", nameAr = "أرسنال ❤️", shortName = "ARS", primaryColor = 0xFFE53935, secondaryColor = 0xFFFFFFFF, reputation = 90, budget = 150_000_000L, league = "EPL"),
+            ClubEntity(id = 9, name = "Liverpool", nameAr = "ليفربول 🔴", shortName = "LIV", primaryColor = 0xFFB71C1C, secondaryColor = 0xFFFFD54F, reputation = 89, budget = 140_000_000L, league = "EPL"),
+            ClubEntity(id = 10, name = "Chelsea", nameAr = "تشيلسي 💙", shortName = "CHE", primaryColor = 0xFF0D47A1, secondaryColor = 0xFFFFFFFF, reputation = 85, budget = 120_000_000L, league = "EPL"),
+            ClubEntity(id = 11, name = "Manchester United", nameAr = "مانشستر يونايتد 👹", shortName = "MUN", primaryColor = 0xFFC62828, secondaryColor = 0xFF212121, reputation = 84, budget = 130_000_000L, league = "EPL"),
+            ClubEntity(id = 12, name = "Tottenham Hotspur", nameAr = "توتنهام ⚪", shortName = "TOT", primaryColor = 0xFFECEFF1, secondaryColor = 0xFF1A237E, reputation = 83, budget = 90_000_000L, league = "EPL"),
+
+            // LAL (La Liga)
+            ClubEntity(id = 13, name = "Real Madrid", nameAr = "ريال مدريد 👑", shortName = "RMA", primaryColor = 0xFFECEFF1, secondaryColor = 0xFF1A237E, reputation = 93, budget = 180_000_000L, league = "LAL"),
+            ClubEntity(id = 14, name = "Barcelona", nameAr = "برشلونة 🔵🔴", shortName = "FCB", primaryColor = 0xFFB71C1C, secondaryColor = 0xFF0D47A1, reputation = 90, budget = 130_000_000L, league = "LAL"),
+            ClubEntity(id = 15, name = "Atletico Madrid", nameAr = "أتلتيكو مدريد 🔴⚪", shortName = "ATM", primaryColor = 0xFFE53935, secondaryColor = 0xFF0D47A1, reputation = 86, budget = 100_000_000L, league = "LAL"),
+            ClubEntity(id = 16, name = "Real Sociedad", nameAr = "ريال سوسيداد 🔵", shortName = "RSO", primaryColor = 0xFF1E88E5, secondaryColor = 0xFFFFFFFF, reputation = 81, budget = 60_000_000L, league = "LAL"),
+            ClubEntity(id = 17, name = "Real Betis", nameAr = "ريال بيتيس 🟢", shortName = "BET", primaryColor = 0xFF2E7D32, secondaryColor = 0xFFFFFFFF, reputation = 80, budget = 55_000_000L, league = "LAL"),
+            ClubEntity(id = 18, name = "Sevilla", nameAr = "إشبيلية ⚪🔴", shortName = "SEV", primaryColor = 0xFFD32F2F, secondaryColor = 0xFFFFFFFF, reputation = 79, budget = 50_000_000L, league = "LAL"),
+
+            // SER (Serie A)
+            ClubEntity(id = 19, name = "Inter Milan", nameAr = "إنتر ميلان 🖤💙", shortName = "INT", primaryColor = 0xFF0D47A1, secondaryColor = 0xFF212121, reputation = 88, budget = 110_000_000L, league = "SER"),
+            ClubEntity(id = 20, name = "AC Milan", nameAr = "إي سي ميلان 🔴🖤", shortName = "ACM", primaryColor = 0xFFC62828, secondaryColor = 0xFF212121, reputation = 85, budget = 85_000_000L, league = "SER"),
+            ClubEntity(id = 21, name = "Juventus", nameAr = "يوفنتوس ⚪🖤", shortName = "JUV", primaryColor = 0xFFE0E0E0, secondaryColor = 0xFF212121, reputation = 86, budget = 100_000_000L, league = "SER"),
+            ClubEntity(id = 22, name = "Napoli", nameAr = "نابولي 🩵", shortName = "NAP", primaryColor = 0xFF2196F3, secondaryColor = 0xFFFFFFFF, reputation = 84, budget = 80_000_000L, league = "SER"),
+            ClubEntity(id = 23, name = "AS Roma", nameAr = "روما 💛❤️", shortName = "ROM", primaryColor = 0xFF880E4F, secondaryColor = 0xFFFFB300, reputation = 82, budget = 65_000_000L, league = "SER"),
+            ClubEntity(id = 24, name = "Atalanta", nameAr = "أتالانتا 💙🖤", shortName = "ATA", primaryColor = 0xFF0288D1, secondaryColor = 0xFF212121, reputation = 81, budget = 55_000_000L, league = "SER"),
+
+            // BUN (Bundesliga)
+            ClubEntity(id = 25, name = "Bayern Munich", nameAr = "بايرن ميونخ 🔴❤️", shortName = "FCB", primaryColor = 0xFFE53935, secondaryColor = 0xFFECEFF1, reputation = 90, budget = 135_000_000L, league = "BUN"),
+            ClubEntity(id = 26, name = "Bayer Leverkusen", nameAr = "باير ليفركوزن ❤️🖤", shortName = "LEV", primaryColor = 0xFFC62828, secondaryColor = 0xFF212121, reputation = 87, budget = 90_000_000L, league = "BUN"),
+            ClubEntity(id = 27, name = "Borussia Dortmund", nameAr = "بوروسيا دورتموند 💛🖤", shortName = "BVB", primaryColor = 0xFFFFD54F, secondaryColor = 0xFF212121, reputation = 85, budget = 80_000_000L, league = "BUN"),
+            ClubEntity(id = 28, name = "RB Leipzig", nameAr = "لايبزيغ 🔴⚪", shortName = "RBL", primaryColor = 0xFFD32F2F, secondaryColor = 0xFF1A237E, reputation = 83, budget = 75_000_000L, league = "BUN"),
+            ClubEntity(id = 29, name = "Eintracht Frankfurt", nameAr = "آينتراخت فرانكفورت 🦅", shortName = "SGE", primaryColor = 0xFF212121, secondaryColor = 0xFFE53935, reputation = 80, budget = 50_000_000L, league = "BUN"),
+            ClubEntity(id = 30, name = "Stuttgart", nameAr = "شتوتغارت ⚪🔴", shortName = "VFB", primaryColor = 0xFFE53935, secondaryColor = 0xFFFFFFFF, reputation = 79, budget = 45_000_000L, league = "BUN"),
+
+            // FRA (Ligue 1)
+            ClubEntity(id = 31, name = "Paris Saint-Germain", nameAr = "باريس سان جيرمان 🔵🇫🇷", shortName = "PSG", primaryColor = 0xFF0F172A, secondaryColor = 0xFFE2E8F0, reputation = 88, budget = 150_000_000L, league = "FRA"),
+            ClubEntity(id = 32, name = "Marseille", nameAr = "مارسيليا 🩵⚪", shortName = "OM", primaryColor = 0xFF4FC3F7, secondaryColor = 0xFFFFFFFF, reputation = 82, budget = 70_000_000L, league = "FRA"),
+            ClubEntity(id = 33, name = "Monaco", nameAr = "موناكو 🔴⚪", shortName = "ASM", primaryColor = 0xFFE53935, secondaryColor = 0xFFFFFFFF, reputation = 81, budget = 65_000_000L, league = "FRA"),
+            ClubEntity(id = 34, name = "Lyon", nameAr = "ليون 🔵🔴⚪", shortName = "OL", primaryColor = 0xFF0D47A1, secondaryColor = 0xFFE53935, reputation = 80, budget = 60_000_000L, league = "FRA"),
+            ClubEntity(id = 35, name = "Lille", nameAr = "ليل 🔴🐶", shortName = "LOS", primaryColor = 0xFFB71C1C, secondaryColor = 0xFF1A237E, reputation = 79, budget = 50_000_000L, league = "FRA"),
+            ClubEntity(id = 36, name = "Nice", nameAr = "نيس ⚫🔴", shortName = "NIC", primaryColor = 0xFF212121, secondaryColor = 0xFFD32F2F, reputation = 78, budget = 45_000_000L, league = "FRA"),
+
+            // ECHA (English Championship)
+            ClubEntity(id = 37, name = "Leicester City", nameAr = "ليستر سيتي 🦊", shortName = "LEI", primaryColor = 0xFF0D47A1, secondaryColor = 0xFFFFFFFF, reputation = 78, budget = 45_000_000L, league = "ECHA"),
+            ClubEntity(id = 38, name = "Leeds United", nameAr = "ليدز يونايتد 🤍", shortName = "LEE", primaryColor = 0xFFECEFF1, secondaryColor = 0xFFFFD54F, reputation = 76, budget = 38_000_000L, league = "ECHA"),
+            ClubEntity(id = 39, name = "Southampton", nameAr = "ساوثهامبتون 🔴⚪", shortName = "SOU", primaryColor = 0xFFE53935, secondaryColor = 0xFF212121, reputation = 75, budget = 35_000_000L, league = "ECHA"),
+            ClubEntity(id = 40, name = "Ipswich Town", nameAr = "إيبسويتش تاون 🚜", shortName = "IPS", primaryColor = 0xFF1976D2, secondaryColor = 0xFFFFFFFF, reputation = 74, budget = 30_000_000L, league = "ECHA"),
+            ClubEntity(id = 41, name = "West Brom", nameAr = "وست بروميتش 🔵⚪", shortName = "WBA", primaryColor = 0xFF002F6C, secondaryColor = 0xFFFFFFFF, reputation = 72, budget = 25_000_000L, league = "ECHA"),
+            ClubEntity(id = 42, name = "Norwich City", nameAr = "نورويتش سيتي 🪵", shortName = "NOR", primaryColor = 0xFFFBC02D, secondaryColor = 0xFF388E3C, reputation = 71, budget = 24_000_000L, league = "ECHA"),
+
+            // EL1 (English League One)
+            ClubEntity(id = 43, name = "Portsmouth", nameAr = "بورتسموث ⚓", shortName = "POR", primaryColor = 0xFF1E3A8A, secondaryColor = 0xFFFFFFFF, reputation = 65, budget = 12_000_000L, league = "EL1"),
+            ClubEntity(id = 44, name = "Derby County", nameAr = "ديربي كاونتي 🐏", shortName = "DER", primaryColor = 0xFF1F2937, secondaryColor = 0xFFFFFFFF, reputation = 64, budget = 11_000_000L, league = "EL1"),
+            ClubEntity(id = 45, name = "Bolton Wanderers", nameAr = "بولتون 🐘", shortName = "BOL", primaryColor = 0xFFF8FAFC, secondaryColor = 0xFF1E3A8A, reputation = 63, budget = 10_000_000L, league = "EL1"),
+            ClubEntity(id = 46, name = "Peterborough", nameAr = "بيتربورو 🔵", shortName = "PET", primaryColor = 0xFF2563EB, secondaryColor = 0xFFFFFFFF, reputation = 62, budget = 8_500_000L, league = "EL1"),
+            ClubEntity(id = 47, name = "Barnsley", nameAr = "بارنسلي 🔴", shortName = "BAR", primaryColor = 0xFFDC2626, secondaryColor = 0xFFFFFFFF, reputation = 61, budget = 8_000_000L, league = "EL1"),
+            ClubEntity(id = 48, name = "Oxford United", nameAr = "أكسفورد يونايتد 🐂", shortName = "OXF", primaryColor = 0xFFFACC15, secondaryColor = 0xFF1E3A8A, reputation = 60, budget = 7_500_000L, league = "EL1")
         ).map {
             if (it.id == selectedClubId) it.copy(isUser = true) else it
         }
 
         careerDao.insertClubs(clubs)
 
-        // 2. Define roster of real playmakers
-        val rawPlayers = listOf(
-            // Al-Hilal
-            Triple("Bounou", "GK", 85), Triple("Koulibaly", "DEF", 84),
-            Triple("Rúben Neves", "MID", 83), Triple("Malcom", "ATT", 82), Triple("Mitrović", "ATT", 85),
-            // Al-Nassr
-            Triple("Bento", "GK", 80), Triple("Laporte", "DEF", 83),
-            Triple("Otávio", "MID", 82), Triple("Sadio Mané", "ATT", 84), Triple("Cristiano Ronaldo", "ATT", 88),
-            // Al-Ittihad
-            Triple("Rajković", "GK", 79), Triple("Luiz Felipe", "DEF", 80),
-            Triple("Kanté", "MID", 84), Triple("Diaby", "ATT", 82), Triple("Karim Benzema", "ATT", 87),
-            // Al-Ahli
-            Triple("Mendy", "GK", 81), Triple("Demiral", "DEF", 80),
-            Triple("Kessié", "MID", 82), Triple("Mahrez", "ATT", 84), Triple("Firmino", "ATT", 81),
-            // Real Madrid
-            Triple("Courtois", "GK", 89), Triple("Rüdiger", "DEF", 87),
-            Triple("Bellingham", "MID", 89), Triple("Vinícius Jr", "ATT", 91), Triple("Mbappé", "ATT", 92),
-            // Barcelona
-            Triple("Ter Stegen", "GK", 86), Triple("Araujo", "DEF", 85),
-            Triple("Pedri", "MID", 86), Triple("Lamine Yamal", "ATT", 88), Triple("Lewandowski", "ATT", 87),
-            // Man City
-            Triple("Ederson", "GK", 86), Triple("Rúben Dias", "DEF", 88),
-            Triple("Rodri", "MID", 91), Triple("De Bruyne", "MID", 90), Triple("Haaland", "ATT", 91),
-            // Liverpool
-            Triple("Alisson", "GK", 88), Triple("Van Dijk", "DEF", 89),
-            Triple("Szoboszlai", "MID", 83), Triple("Luis Díaz", "ATT", 84), Triple("Mohamed Salah", "ATT", 89),
-            // Bayern Munich
-            Triple("Neuer", "GK", 85), Triple("Kim Min-jae", "DEF", 83),
-            Triple("Musiala", "MID", 87), Triple("Sané", "ATT", 84), Triple("Harry Kane", "ATT", 90),
-            // PSG
-            Triple("Donnarumma", "GK", 85), Triple("Marquinhos", "DEF", 84),
-            Triple("Vitinha", "MID", 82), Triple("Dembélé", "ATT", 84), Triple("Barcola", "ATT", 81)
-        )
-
-        // Convert raw players matching their club IDs
+        // 2. Dynamically generate rosters matching real football leagues
         val playersDatabaseList = mutableListOf<PlayerEntity>()
-        var clubIndex = 1
-        var count = 0
-        for (item in rawPlayers) {
-            val age = Random.nextInt(18, 36)
-            val valAmt = getPlayerValue(item.third, age, item.second)
-            val wageAmt = getPlayerWage(item.third)
 
-            playersDatabaseList.add(
-                PlayerEntity(
-                    name = item.first,
-                    position = item.second,
-                    rating = item.third,
-                    shooting = if (item.second == "GK") 15 else item.third + Random.nextInt(-4, 4),
-                    passing = if (item.second == "GK") 20 else item.third + Random.nextInt(-4, 4),
-                    speed = if (item.second == "GK") 45 else item.third + Random.nextInt(-6, 6),
-                    defending = if (item.second == "DEF") item.third + 5 else if (item.second == "MID") item.third - 5 else 30,
-                    goalkeeper = if (item.second == "GK") item.third + 5 else 10,
-                    age = age,
-                    clubId = clubIndex,
-                    value = valAmt,
-                    wage = wageAmt,
-                    onTransferList = false
+        // Historical & Real names lists
+        val saudiNames = listOf("سالم الدوسري", "عبدالرحمن غريب", "فراس البريكان", "محمد العويس", "علي البليهي", "سلطان الغنام", "فيصل الغامدي", "حسن كادش", "عبدالله الحمدان", "صالح الشهري", "سلمان الفرج")
+        val englishNames = listOf("Smith", "Rice", "Sterling", "Palmer", "Mount", "Kane", "Pickford", "Saka", "Alexander-Arnold", "Bellingham", "Foden", "Rashford", "Mainoo", "Chilwell", "Trippier", "Madison", "Bowen", "Watkins")
+        val spanishNames = listOf("Gomez", "Lopez", "Garcia", "Fernandez", "Rodriguez", "Torres", "Martinez", "Sanchez", "Perez", "Navas", "Pedri", "Gavi", "Yamal", "Carvajal")
+        val italianNames = listOf("Rossi", "Ferrari", "Russo", "Bianchi", "Gallo", "Costa", "Barella", "Chiesa", "Bastoni", "Donnarumma", "Locatelli", "Dimarco")
+        val germanNames = listOf("Müller", "Schmidt", "Schneider", "Fischer", "Weber", "Meyer", "Wagner", "Becker", "Schulz", "Kroos", "Neuer", "Musiala", "Wirtz", "Sane")
+        val frenchNames = listOf("Martin", "Bernard", "Thomas", "Petit", "Dubois", "Michel", "Laurent", "Dembele", "Mbappe", "Griezmann", "Giroud", "Barcola", "Tchouameni")
+
+        for (c in clubs) {
+            val namesSource = when (c.league) {
+                "SPL" -> saudiNames
+                "EPL", "ECHA", "EL1" -> englishNames
+                "LAL" -> spanishNames
+                "SER" -> italianNames
+                "BUN" -> germanNames
+                else -> frenchNames
+            }
+
+            // Generate 5 key starter role positions per club
+            val roles = listOf("GK", "DEF", "MID", "MID", "ATT")
+            for (idx in roles.indices) {
+                val role = roles[idx]
+                val randomName = namesSource.shuffled().first() + " " + (10..99).random()
+                val baseRat = (c.reputation + Random.nextInt(-4, 4)).coerceAtLeast(60)
+                val age = Random.nextInt(18, 35)
+                val valAmt = getPlayerValue(baseRat, age, role)
+                val wageAmt = getPlayerWage(baseRat)
+
+                playersDatabaseList.add(
+                    PlayerEntity(
+                        name = randomName,
+                        position = role,
+                        rating = baseRat,
+                        shooting = if (role == "ATT") baseRat + Random.nextInt(2, 6) else if (role == "GK") 12 else baseRat - 15,
+                        passing = if (role == "MID") baseRat + Random.nextInt(2, 6) else baseRat - 10,
+                        speed = baseRat + Random.nextInt(-6, 8),
+                        defending = if (role == "DEF") baseRat + Random.nextInt(2, 6) else if (role == "GK") 8 else 30,
+                        goalkeeper = if (role == "GK") baseRat + Random.nextInt(2, 6) else 8,
+                        age = age,
+                        clubId = c.id,
+                        value = valAmt,
+                        wage = wageAmt,
+                        onTransferList = false
+                    )
                 )
-            )
-            count++
-            if (count % 5 == 0) {
-                clubIndex++
             }
         }
 
-        // Add some FREE AGENTS / TRANSFER STAR PLAYERS (clubId = 0)
+        // If Player Career mode is selected, add the customizable player into the database
+        if (careerMode == "Player") {
+            playersDatabaseList.add(
+                PlayerEntity(
+                    name = managerName,
+                    position = playerPosition,
+                    rating = 75,
+                    shooting = if (playerPosition == "ATT") 78 else 45,
+                    passing = if (playerPosition == "MID") 77 else 48,
+                    speed = 82,
+                    defending = if (playerPosition == "DEF") 77 else 32,
+                    goalkeeper = if (playerPosition == "GK") 78 else 8,
+                    age = 18,
+                    clubId = selectedClubId,
+                    value = getPlayerValue(75, 18, playerPosition),
+                    wage = 25_000L,
+                    onTransferList = false
+                )
+            )
+        }
+
+        // Add marquee iconic transfer star free agents
         val transferMarketStars = listOf(
             Triple("Lionel Messi", "ATT", 88),
             Triple("Luka Modrić", "MID", 83),
             Triple("Toni Kroos", "MID", 84),
             Triple("Sergio Ramos", "DEF", 81),
             Triple("David De Gea", "GK", 80),
-            Triple("Paulo Dybala", "ATT", 83),
-            Triple("Paul Pogba", "MID", 78),
-            Triple("Thiago Silva", "DEF", 79)
+            Triple("Paulo Dybala", "ATT", 83)
         )
 
         for (item in transferMarketStars) {
-            val age = Random.nextInt(28, 38)
+            val age = Random.nextInt(32, 38)
             val valAmt = getPlayerValue(item.third, age, item.second)
             val wageAmt = getPlayerWage(item.third)
 
@@ -182,12 +245,13 @@ class CareerRepository(private val careerDao: CareerDao) {
 
         careerDao.insertPlayers(playersDatabaseList)
 
-        // 3. Generate Double Round-Robin Fixtures for 10 teams
-        val teamList = (1..10).toMutableList()
+        // 3. Generate Double Round-Robin Fixtures specifically for the 6 teams of the user's selected league
+        val leagueClubs = clubs.filter { it.league == leagueCode }
+        val teamList = leagueClubs.map { it.id }.toMutableList()
         val numTeams = teamList.size
         val firstLegFixtures = mutableListOf<FixtureEntity>()
 
-        // 9 Weeks for Round Robin Leg 1
+        // 5 Weeks for Round Robin Leg 1
         for (round in 0 until numTeams - 1) {
             for (i in 0 until numTeams / 2) {
                 val home = teamList[i]
@@ -220,7 +284,7 @@ class CareerRepository(private val careerDao: CareerDao) {
             teamList[1] = last
         }
 
-        // Generate Leg 2 (Rounds 10 to 18) by flipping home and away
+        // Generate Leg 2 (Rounds 6 to 10) by flipping home and away
         val allFixtures = mutableListOf<FixtureEntity>()
         allFixtures.addAll(firstLegFixtures)
 
@@ -228,7 +292,7 @@ class CareerRepository(private val careerDao: CareerDao) {
             allFixtures.add(
                 FixtureEntity(
                     season = 1,
-                    week = f.week + 9,
+                    week = f.week + (numTeams - 1),
                     homeTeamId = f.awayTeamId,
                     awayTeamId = f.homeTeamId
                 )
@@ -244,16 +308,28 @@ class CareerRepository(private val careerDao: CareerDao) {
             clubId = selectedClubId,
             budget = userClubRef.budget,
             season = 1,
-            week = 1
+            week = 1,
+            careerMode = careerMode,
+            playerName = managerName,
+            playerPosition = playerPosition,
+            selectedLeagueCode = leagueCode
         )
         careerDao.insertCareer(career)
 
-        // 5. Inbox News
+        // 5. Place inbox welcoming news letter
         val welcomeNews = NewsEntity(
-            title = "Welcome Coach!",
-            titleAr = "مرحباً بك يا كوتش!",
-            content = "Breaking News! $managerName has been announced as the official head coach of ${userClubRef.name}! The board expects a solid performance this season with a budget of $${userClubRef.budget / 1_000_000}M.",
-            contentAr = "أخبار عاجلة! تم الإعلان عن تعيين المدرب $managerName كمدير فني رسمي لنادي ${userClubRef.nameAr}! تترقب الإدارة نجاحاً كبيراً هذا الموسم بميزانية قدرها $${userClubRef.budget / 1_000_000} مليون دولار.",
+            title = "Inauguration Announcement!",
+            titleAr = if (careerMode == "Player") "⚽ انطلاق مسيرة تخليد اللاعب الجديد!" else "👑 تعيين القيادة التكتيكية الجديدة للمدرب!",
+            content = if (careerMode == "Player") {
+                "Exciting! $managerName has signed a professional player contract with ${userClubRef.name}! Fans are ready to see the talent rise."
+            } else {
+                "Breaking News! $managerName has been announced as the official head coach of ${userClubRef.name}! The board expects solid glory with a budget of $${userClubRef.budget / 1_000_000}M."
+            },
+            contentAr = if (careerMode == "Player") {
+                "ساعة الحسم! وقّعت الجوهرة الكروية $managerName عقداً احترافياً رسمياً مع نادي ${userClubRef.nameAr} لدعم الفريق هذا الموسم كلاعب أساسي واعد بـ ${playerPosition}!"
+            } else {
+                "أخبار عاجلة! تم الإعلان عن تعيين المدرب القدير $managerName كقائد فني وتكتيكي لنادي ${userClubRef.nameAr}! تترقب الإدارة وعشاق الفريق تحقيق البطولات هذا الموسم بميزانية قدرها $${userClubRef.budget / 1_000_000} مليون دولار."
+            },
             type = "Board"
         )
         careerDao.insertNews(welcomeNews)

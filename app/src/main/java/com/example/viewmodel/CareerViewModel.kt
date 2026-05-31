@@ -64,6 +64,15 @@ class CareerViewModel(application: Application) : AndroidViewModel(application) 
         initialValue = emptyList()
     )
 
+    // Scout Discoveries Flow
+    val scoutDiscoveries: StateFlow<List<PlayerEntity>> = dao.getPlayersFlow().map { list ->
+        list.filter { it.clubId == -2 }
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = emptyList()
+    )
+
     // UI state holder
     private val _currentTab = MutableStateFlow(0) // 0: Home, 1: Squad, 2: Table, 3: Transfers, 4: Inbox
     val currentTab = _currentTab.asStateFlow()
@@ -94,6 +103,37 @@ class CareerViewModel(application: Application) : AndroidViewModel(application) 
 
     private val _trainingFeedback = MutableStateFlow<String?>(null)
     val trainingFeedback = _trainingFeedback.asStateFlow()
+
+    // Match Speed multiplier state for simulation
+    private val _matchSpeed = MutableStateFlow(1f) // 1f, 2f, 4f
+    val matchSpeed = _matchSpeed.asStateFlow()
+
+    fun changeMatchSpeed(speed: Float) {
+        _matchSpeed.value = speed
+    }
+
+    // Dynamic Team Chemistry Flow calculated on the fly based on roster positions
+    val teamChemistry: StateFlow<Int> = _userSquad.map { squad ->
+        if (squad.isEmpty()) return@map 0
+        var gkCount = 0
+        var defCount = 0
+        var midCount = 0
+        var attCount = 0
+        for (p in squad) {
+            when (p.position) {
+                "GK" -> gkCount++
+                "DEF" -> defCount++
+                "MID" -> midCount++
+                "ATT" -> attCount++
+            }
+        }
+        var chem = 100
+        if (gkCount < 1) chem -= 25
+        if (defCount < 3) chem -= (3 - defCount).coerceAtLeast(0) * 10
+        if (midCount < 3) chem -= (3 - midCount).coerceAtLeast(0) * 10
+        if (attCount < 2) chem -= (2 - attCount).coerceAtLeast(0) * 10
+        chem.coerceIn(20, 100)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 80)
 
     // Opponent dynamic tactical state during match simulation
     private val _opponentCurrentTactic = MutableStateFlow("Balanced")
@@ -264,9 +304,21 @@ class CareerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     // User Career Creation
-    fun createNewCareer(managerName: String, clubId: Int) {
+    fun createNewCareer(
+        managerName: String,
+        clubId: Int,
+        careerMode: String = "Manager",
+        playerPosition: String = "ATT",
+        leagueCode: String = "SPL"
+    ) {
         viewModelScope.launch {
-            repository.initializeNewCareer(managerName, clubId)
+            repository.initializeNewCareer(
+                managerName = managerName,
+                selectedClubId = clubId,
+                careerMode = careerMode,
+                playerPosition = playerPosition,
+                leagueCode = leagueCode
+            )
             _currentTab.value = 0
 
             // Logging initial journal entry
@@ -274,9 +326,13 @@ class CareerViewModel(application: Application) : AndroidViewModel(application) 
                 season = 1,
                 week = 1,
                 title = "Inauguration Day",
-                titleAr = "👑 بداية المسيرة الكروية للمدرب $managerName",
-                content = "Manager officially appointed to selected club.",
-                contentAr = "تم تعيين المدرب القدير $managerName رسمياً على رأس القيادة الفنية لناديكم المختار. الآمال معقودة والجميع يتطلعون لتقديم أداء تكتيكي أسطوري هذا الموسم الكروي الجديد!",
+                titleAr = if (careerMode == "Player") "⚽ انطلاق مسيرة اللاعب $managerName" else "👑 بداية المسيرة الكروية للمدرب $managerName",
+                content = "Profile officially started.",
+                contentAr = if (careerMode == "Player") {
+                    "انطلقت المسيرة الرياضية الاحترافية للاعب المحترف $managerName. الآمال عريضة والجميع ينتظر تطوره وتدريباته وتألقه في المباريات للتنافس على الانتقال لأفضل الأندية العالمية!"
+                } else {
+                    "تم تعيين المدرب القدير $managerName رسمياً على رأس القيادة الفنية لناديكم المختار. الآمال معقودة والجميع يتطلعون لتقديم أداء تكتيكي أسطوري هذا الموسم الكروي الجديد!"
+                },
                 isAuto = true
             )
             repository.insertJournal(welcomeJournal)
@@ -618,6 +674,81 @@ class CareerViewModel(application: Application) : AndroidViewModel(application) 
             // 1. Simulate all other fixtures
             repository.simulateRestOfMatches(career.week, career.clubId)
 
+            // Handle Scouting Mission progression (World Soccer Champs style)
+            if (career.scoutingMissionActive) {
+                val updatedWeeks = career.scoutingWeeksPassed + 1
+                if (updatedWeeks >= 1) {
+                    // Mission Finished! Find 3 wonderkids
+                    val discoveredPlayers = mutableListOf<PlayerEntity>()
+                    val positions = if (career.scoutingMissionPosition.isEmpty() || career.scoutingMissionPosition == "ANY") {
+                        listOf("GK", "DEF", "MID", "ATT")
+                    } else {
+                        listOf(career.scoutingMissionPosition)
+                    }
+
+                    val firstNames = listOf("Jack", "Harry", "Thomas", "George", "Oliver", "William", "James", "Mason", "Jude", "Leo", "Zinedine", "Cristiano", "Kylian", "Erling", "Bukayo", "Lamine")
+                    val lastNames = listOf("Champs", "Wunderkind", "Prodigy", "Wizard", "Talent", "Henderson", "Walker", "Alexander", "Green", "White", "Cole", "Bellingham", "Mainoo", "Guler")
+                    
+                    for (i in 0 until 3) {
+                        val chosenPos = positions.shuffled().first()
+                        val starRating = (career.scoutLevel * 6 + 55 + Random.nextInt(0, 8)).coerceIn(58, 88)
+                        val age = Random.nextInt(17, 20)
+                        val value = repository.getPlayerValue(starRating, age, chosenPos)
+                        
+                        val nameStr = "${firstNames.shuffled().first()} ${lastNames.shuffled().first()} (صيد الكشافة)"
+                        discoveredPlayers.add(
+                            PlayerEntity(
+                                name = nameStr,
+                                position = chosenPos,
+                                rating = starRating,
+                                shooting = if (chosenPos == "ATT") starRating + Random.nextInt(2, 6) else if (chosenPos == "GK") 10 else starRating - 10,
+                                passing = if (chosenPos == "MID") starRating + Random.nextInt(2, 6) else starRating - 10,
+                                speed = starRating + Random.nextInt(-4, 9),
+                                defending = if (chosenPos == "DEF") starRating + Random.nextInt(2, 6) else if (chosenPos == "GK") 8 else 30,
+                                goalkeeper = if (chosenPos == "GK") starRating + Random.nextInt(2, 6) else 8,
+                                age = age,
+                                clubId = -2, // Scout recruit candidate
+                                value = value,
+                                wage = 8_000L,
+                                form = 7,
+                                energy = 100
+                            )
+                        )
+                    }
+
+                    // Delete old scout discoveries (set to -9)
+                    val allPlayers = dao.getPlayersFlow().first()
+                    for (p in allPlayers) {
+                        if (p.clubId == -2) {
+                            repository.updatePlayer(p.copy(clubId = -9))
+                        }
+                    }
+
+                    // Save new discoveries
+                    dao.insertPlayers(discoveredPlayers)
+
+                    // Update career
+                    val finishedCareer = career.copy(
+                        scoutingMissionActive = false,
+                        scoutingWeeksPassed = 0,
+                        scoutingMissionPosition = ""
+                    )
+                    repository.updateCareer(finishedCareer)
+
+                    // News alerts
+                    val scoutAlert = NewsEntity(
+                        title = "Scout Dispatch Finished",
+                        titleAr = "تقرير كشافة النادي جاهز! 🕵️‍♂️",
+                        content = "Scout returned with prospective stars.",
+                        contentAr = "عاد المندوب الكروي بقائمة استطلاع حصرية من (3) مواهب شابة Wonderkids تناسب احتياجات الفريق بأسعار تصفية مغرية. تصفح صفحة الكشافة لاستعراضهم والتعاقد معهم الآن!",
+                        type = "Board"
+                    )
+                    repository.insertNews(scoutAlert)
+                } else {
+                    repository.updateCareer(career.copy(scoutingWeeksPassed = updatedWeeks))
+                }
+            }
+
             // 2. Reduce squad energy slightly (match fatigue)
             val squad = _userSquad.value
             for (p in squad) {
@@ -710,9 +841,46 @@ class CareerViewModel(application: Application) : AndroidViewModel(application) 
             )
             repository.insertJournal(matchJournal)
 
+            // 3e. Apply weekly Jersey Sponsor Payment if any
+            var sponsorIncome = 0L
+            val sponsorName = career.selectedSponsor
+            if (sponsorName != "None") {
+                val basePay = when (sponsorName) {
+                    "Aramco" -> 350_000L
+                    "Emirates" -> 250_000L
+                    "Spotify" -> 180_000L
+                    "Nike" -> 120_000L
+                    else -> 0L
+                }
+                var bonusPay = 0L
+                if (sponsorName == "Spotify" && userScore > oppScore) {
+                    bonusPay = 100_000L // Win Bonus
+                }
+                sponsorIncome = basePay + bonusPay
+
+                // Deposit news alert in inbox
+                val transSponsor = when (sponsorName) {
+                    "Aramco" -> "أرامكو السعودية 🇸🇦"
+                    "Emirates" -> "طيران الإمارات ✈️"
+                    "Spotify" -> "سبوتيفاي 🎵"
+                    else -> "نايكي ✔️"
+                }
+                val sponsorAlert = NewsEntity(
+                    title = "Sponsor Payout",
+                    titleAr = "حوالة ومستحقات رعاية [$transSponsor]! 👕💰",
+                    content = "Weekly payout deposited.",
+                    contentAr = "أودعت الشركة الراعية [ $transSponsor ] الدفعة الأسبوعية لعقد رعاية قميص النادي بقيمة $${sponsorIncome / 1_000f}k في رصيد النادي لمواصلة التدعيم وتحسين الأكاديمية والمقرات!",
+                    type = "Board"
+                )
+                repository.insertNews(sponsorAlert)
+            }
+
             // 4. Increment week index or end season
-            if (career.week < 18) {
-                val updatedCareer = career.copy(week = career.week + 1)
+            if (career.week < 10) {
+                val updatedCareer = career.copy(
+                    week = career.week + 1,
+                    budget = career.budget + sponsorIncome
+                )
                 repository.updateCareer(updatedCareer)
             } else {
                 // End of season! Reset week stats, increase season rating, pay prize money
@@ -733,7 +901,7 @@ class CareerViewModel(application: Application) : AndroidViewModel(application) 
                 val updatedCareer = career.copy(
                     week = 1,
                     season = career.season + 1,
-                    budget = career.budget + userPrize
+                    budget = career.budget + userPrize + sponsorIncome
                 )
                 repository.updateCareer(updatedCareer)
 
@@ -851,7 +1019,7 @@ class CareerViewModel(application: Application) : AndroidViewModel(application) 
                     }
 
                     // 6. Advance week or end season
-                    if (currentWeek < 18) {
+                    if (currentWeek < 10) {
                         val updatedCareer = career.copy(week = currentWeek + 1)
                         repository.updateCareer(updatedCareer)
                     } else {
@@ -888,7 +1056,7 @@ class CareerViewModel(application: Application) : AndroidViewModel(application) 
                         // Add journal entry
                         val seasonJournal = JournalEntity(
                             season = career.season,
-                            week = 18,
+                            week = 10,
                             title = "Season Concluded via Quick Simulation",
                             titleAr = "🏁 انتهاء الموسم رقم ${career.season} بالمحاكاة الكاملة",
                             content = "Completed season skip.",
@@ -1101,7 +1269,8 @@ class CareerViewModel(application: Application) : AndroidViewModel(application) 
     private fun tickMatchTime() {
         viewModelScope.launch {
             while (matchTime < 90) {
-                kotlinx.coroutines.delay(1000) // Ticking minutes quickly
+                val speedDelay = (1000 / _matchSpeed.value).toLong()
+                kotlinx.coroutines.delay(speedDelay) // Ticking minutes quickly
                 matchTime += Random.nextInt(8, 15)
                 if (matchTime >= 90) matchTime = 90
 
@@ -1278,7 +1447,10 @@ class CareerViewModel(application: Application) : AndroidViewModel(application) 
 
         val event = state.currentEvent
         val rnd = Random.nextInt(100)
-        val success = rnd < option.successChance
+        // Chemistry impact on option success: high chemistry grants up to +6%, poor synergy penalizes up to -10%
+        val chemValue = teamChemistry.value
+        val chemBonus = ((chemValue - 70) / 5).coerceIn(-10, 6)
+        val success = rnd < (option.successChance + chemBonus)
         val isUserAttack = event.type == EventType.USER_ATTACK
 
         val details: String
@@ -1359,9 +1531,273 @@ class CareerViewModel(application: Application) : AndroidViewModel(application) 
         )
     }
 
+    // Directly skip interactive simulation to final scores instantly
+    fun skipRemainingMatch() {
+        val state = _matchState.value
+        if (state !is MatchPlayState.Simulating) return
+
+        val uClub = userClub.value ?: return
+        val oppClub = opponentClub.value ?: return
+        val squad = _userSquad.value
+        
+        // Quick mathematical model of what would happen in remaining duration
+        val remainingMinutes = 90 - matchTime
+        if (remainingMinutes > 0) {
+            val potentialAttacks = (remainingMinutes / 15).coerceAtLeast(1)
+            for (i in 0 until potentialAttacks) {
+                // Bias according to rating difference
+                val diffFactor = (squad.map { it.rating }.average() - 75f) / 10f
+                if (Random.nextFloat() < 0.22f + (diffFactor * 0.02f)) {
+                    homeGoals++
+                    logs.add("⚽ دقيقة ${90 - i * 3}' - هدف محقق لصالح أصحاب الأرض بعد كسر مصيدة التسلل!")
+                }
+                if (Random.nextFloat() < 0.20f - (diffFactor * 0.02f)) {
+                    awayGoals++
+                    logs.add("⚽ دقيقة ${90 - i * 3}' - هدف لصالح الضيوف من هجمة مرتدة ساحقة!")
+                }
+            }
+        }
+        
+        matchTime = 90
+        logs.add("⏱️ إنهاء فوري بالاتفاق مع طاقم الحكام تكتيكياً ومحاكاة الدقائق المتبقية.")
+
+        _matchState.value = MatchPlayState.Simulating(
+            minute = 90,
+            homeScore = homeGoals,
+            awayScore = awayGoals,
+            logs = logs.toList(),
+            currentEvent = null
+        )
+
+        viewModelScope.launch {
+            finishInteractiveMatch()
+        }
+    }
+
+    // Pick dynamic sponsor of choice (Aramco, Emirates, Spotify, Nike) and claim weekly payouts
+    fun chooseSponsor(sponsorName: String) {
+        val career = careerState.value ?: return
+        viewModelScope.launch {
+            val updatedCareer = career.copy(selectedSponsor = sponsorName)
+            repository.updateCareer(updatedCareer)
+
+            // Newsletter of signed contracts
+            val translation = when (sponsorName) {
+                "Aramco" -> "أرامكو السعودية 🇸🇦"
+                "Emirates" -> "طيران الإمارات ✈️"
+                "Spotify" -> "سبوتيفاي الموسيقية 🎵"
+                "Nike" -> "نايكي للمستلزمات الرياضية ✔️"
+                else -> "None"
+            }
+            if (sponsorName != "None") {
+                val valStr = when (sponsorName) {
+                    "Aramco" -> "$3.5M لكل موسم تكتيكي"
+                    "Emirates" -> "$2.5M لكل موسم بدون شروط"
+                    "Spotify" -> "$1.8M لكل موسم + مكافأة انتصار"
+                    else -> "$1.2M لكل موسم + تمويل براعم"
+                }
+                val joinNews = NewsEntity(
+                    title = "Sponsor Signed",
+                    titleAr = "إعلان رسمي: رعاية جديدة للفريق مع [$translation]! 👕",
+                    content = "Club signed a new Jersey Shirt Sponsor contract.",
+                    contentAr = "أعلن مجلس إدارة النادي رسمياً عن توقيع عقد شراكة استراتيجية لرعاية قميص الفريق الأول مع [$translation] بعائد مالي قيمته [$valStr]. ستدعم هذه الأموال مباشرة جهود المدرب في تطوير الأكاديمية وجلب النجوم!",
+                    type = "Board"
+                )
+                repository.insertNews(joinNews)
+            }
+        }
+    }
+
     // Quit Match screen to return to Lobby
     fun finishMatchLobby() {
         _matchState.value = MatchPlayState.PreMatch
+    }
+
+    // --- ACADEMY & SCOUTING SYSTEM METHODS (World Soccer Champs style) ---
+
+    // Upgrade Youth Academy
+    fun upgradeAcademy() {
+        val career = careerState.value ?: return
+        if (career.academyLevel >= 5) return
+        val upgradeCost = when (career.academyLevel) {
+            1 -> 1_500_000L
+            2 -> 3_000_000L
+            3 -> 6_000_000L
+            4 -> 12_000_000L
+            else -> 0L
+        }
+        if (career.budget >= upgradeCost) {
+            viewModelScope.launch {
+                val updatedCareer = career.copy(
+                    budget = career.budget - upgradeCost,
+                    academyLevel = career.academyLevel + 1
+                )
+                repository.updateCareer(updatedCareer)
+
+                // Notify in inbox
+                val academyNews = NewsEntity(
+                    title = "Academy Upgraded",
+                    titleAr = "تمت ترقية أكاديمية الشباب لمستواك الجديد! 🎓",
+                    content = "Academy Level is now Lvl ${updatedCareer.academyLevel}.",
+                    contentAr = "تهانينا للمدير الفني! استثمر النادي مبلغ $${upgradeCost / 1_000_000}M لرفع كفاءة ومرافق البنية التحتية لأكاديمية الشباب لتصبح بالمستوى الكاسح (${updatedCareer.academyLevel}/5). يضمن ذلك إنجاب نجوم ذات OVR وجاهزية فنية أفضل بكثير للتصعيد الفوري للفريق الكروي الأول!",
+                    type = "Board"
+                )
+                repository.insertNews(academyNews)
+            }
+        }
+    }
+
+    // Promote Academy Prodigy
+    fun promoteAcademyProdigy() {
+        val career = careerState.value ?: return
+        val uClub = userClub.value ?: return
+        val signFee = 250_000L
+        if (career.budget < signFee) return
+
+        viewModelScope.launch {
+            // Generate customized star
+            val age = Random.nextInt(16, 18)
+            val pos = listOf("GK", "DEF", "MID", "ATT").shuffled().first()
+            val baseRating = (career.academyLevel * 5 + 50 + Random.nextInt(0, 6)).coerceIn(52, 85)
+            
+            val arabFirstNames = listOf("فهد", "يوسف", "تركي", "نواف", "فيصل", "سلطان", "مهند", "بندر", "سعود", "ريان")
+            val arabLastNames = listOf("الدوسري", "العازمي", "الجهني", "الشمري", "القحطاني", "الحربي", "العتيبي", "سالم", "جمال", "خالد")
+            val engFirstNames = listOf("Jack", "Harry", "Thomas", "George", "Oliver", "William", "James", "Mason", "Jude")
+            val engLastNames = listOf("Henderson", "Champs", "Walker", "Alexander", "Green", "White", "Cole", "Bellingham")
+            
+            val isArab = career.selectedLeagueCode == "SPL"
+            val randomName = if (isArab) {
+                "${arabFirstNames.shuffled().first()} ${arabLastNames.shuffled().first()}"
+            } else {
+                "${engFirstNames.shuffled().first()} ${engLastNames.shuffled().first()}"
+            } + " (براعمالأكاديمية)"
+
+            val freshPlayer = PlayerEntity(
+                name = randomName,
+                position = pos,
+                rating = baseRating,
+                shooting = if (pos == "ATT") baseRating + Random.nextInt(2, 6) else if (pos == "GK") 10 else baseRating - 10,
+                passing = if (pos == "MID") baseRating + Random.nextInt(2, 6) else baseRating - 10,
+                speed = baseRating + Random.nextInt(-4, 9),
+                defending = if (pos == "DEF") baseRating + Random.nextInt(2, 6) else if (pos == "GK") 8 else 30,
+                goalkeeper = if (pos == "GK") baseRating + Random.nextInt(2, 6) else 8,
+                age = age,
+                clubId = uClub.id,
+                value = repository.getPlayerValue(baseRating, age, pos),
+                wage = 5_000L,
+                form = 8,
+                energy = 100
+            )
+
+            dao.insertPlayers(listOf(freshPlayer))
+            
+            val updatedCareer = career.copy(budget = career.budget - signFee)
+            repository.updateCareer(updatedCareer)
+
+            // Refresh user squad
+            _userSquad.value = repository.getPlayersByClub(uClub.id)
+
+            // Notify in inbox
+            val news = NewsEntity(
+                title = "Academy Star Promoted",
+                titleAr = "توقيع موهوب صاعد من أكاديمية الشباب! 🎓",
+                content = "Graduated talent signed successfully.",
+                contentAr = "زف الكشافة الخبر السعيد! تم التوقيع رسمياً وتصعيد الموهبة الصاعدة [${randomName}] بمركز [${pos}] وبتقييم أساسي واعد [${baseRating} OVR] بسن الـ ${age} عاماً فقط لشعار الفريق مقابل رسوم مالية وتأمين $${signFee / 1_000}K.",
+                type = "Board"
+            )
+            repository.insertNews(news)
+        }
+    }
+
+    // Upgrade Hired Scout
+    fun upgradeScout() {
+        val career = careerState.value ?: return
+        if (career.scoutLevel >= 3) return
+        val cost = when (career.scoutLevel) {
+            1 -> 2_500_000L
+            2 -> 5_000_000L
+            else -> 0L
+        }
+        if (career.budget >= cost) {
+            viewModelScope.launch {
+                val updatedCareer = career.copy(
+                    budget = career.budget - cost,
+                    scoutLevel = career.scoutLevel + 1
+                )
+                repository.updateCareer(updatedCareer)
+
+                val news = NewsEntity(
+                    title = "Scout Upgraded",
+                    titleAr = "التعاقد مع كشاف كروي عالمي المستوى! 🔍",
+                    content = "Scout level increased.",
+                    contentAr = "رسمياً، وافقت إدارة النادي على رفع سقف التوظيف للتعاقد مع خبير استكشاف كروي استراتيجي بالمستوى الجديد (${updatedCareer.scoutLevel}/3). هذا الخبير متمرس في الأسواق الأوروبية وسيضمن لك العثور على صيد ثمين من المواهب بمجرد تحديد المواصفات المطلوبة!",
+                    type = "Board"
+                )
+                repository.insertNews(news)
+            }
+        }
+    }
+
+    // Launch Scouting Mission
+    fun launchScoutMission(position: String) {
+        val career = careerState.value ?: return
+        if (career.scoutingMissionActive) return
+        val missionFee = 200_000L
+        if (career.budget < missionFee) return
+
+        viewModelScope.launch {
+            val updatedCareer = career.copy(
+                budget = career.budget - missionFee,
+                scoutingMissionActive = true,
+                scoutingMissionPosition = position,
+                scoutingWeeksPassed = 0
+            )
+            repository.updateCareer(updatedCareer)
+
+            // News post
+            val joinNews = NewsEntity(
+                title = "Scout Dispatched",
+                titleAr = "انطلاق بعثة الكشافة للتنقيب الميداني ✈️",
+                content = "Scout sent out inside global leagues.",
+                contentAr = "تم تفويض طاقم الاستكشاف بقيادة الكشاف برتبة ليفل (${career.scoutLevel}) بمهمة طيران رسمية للتفتيش عن صفقات Wonderkids بمركز [${position}] وتوفير قائمة بـ 3 ترشيحات جاهزة بحلول الأسبوع القادم في الدوري.",
+                type = "Board"
+            )
+            repository.insertNews(joinNews)
+        }
+    }
+
+    // Sign Discovered Scout Candidate
+    fun signScoutProdigy(prodigy: PlayerEntity) {
+        val career = careerState.value ?: return
+        val uClub = userClub.value ?: return
+        val price = prodigy.value
+        if (career.budget < price) return
+
+        viewModelScope.launch {
+            // Update candidate to be on user's team
+            val signed = prodigy.copy(
+                clubId = uClub.id,
+                onTransferList = false
+            )
+            repository.updatePlayer(signed)
+
+            // Deduct money from budget
+            val updatedCareer = career.copy(budget = career.budget - price)
+            repository.updateCareer(updatedCareer)
+
+            // Refresh user squad
+            _userSquad.value = repository.getPlayersByClub(uClub.id)
+
+            // News post
+            val joinNews = NewsEntity(
+                title = "Scouted Star Signed",
+                titleAr = "حسم صفقة الاستكشاف رسمياً! 💎",
+                content = "Wonderkid scouted and signed.",
+                contentAr = "بناءً على مشورة الكشافين، وقع المدرب رسمياً مع الموهبة الصاعدة المكتشفة [${prodigy.name}] بمركز [${prodigy.position}] وتقييم [${prodigy.rating} OVR] بقيمة $${price / 1_000_000}M. ستقوم هذه الصفقة بإشعال الحماس التنافسي في الخطوط الخلفية والأمامية للفريق!",
+                type = "Board"
+            )
+            repository.insertNews(joinNews)
+        }
     }
 }
 

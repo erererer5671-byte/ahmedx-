@@ -10,9 +10,24 @@ data class CareerEntity(
     val clubId: Int, // Managed club
     val budget: Long, // Current budget in Dollars
     val season: Int = 1,
-    val week: Int = 1, // 1 to 18
+    val week: Int = 1, // 1 to 10 or 18
     val reputation: Int = 50,
-    val difficulty: String = "Normal"
+    val difficulty: String = "Normal",
+    val careerMode: String = "Manager", // "Manager" or "Player"
+    val playerName: String = "",
+    val playerPosition: String = "ATT",
+    val playerRating: Int = 75,
+    val playerSpeed: Int = 75,
+    val playerShooting: Int = 75,
+    val playerPassing: Int = 75,
+    val playerDefending: Int = 40,
+    val selectedLeagueCode: String = "SPL", // "SPL", "EPL", "LAL", "SER", "BUN", "FRA"
+    val academyLevel: Int = 1, // Youth Academy tier (1 to 5)
+    val scoutLevel: Int = 1, // Hired scout quality tier (1 to 3)
+    val scoutingMissionActive: Boolean = false, // Current Active status
+    val scoutingMissionPosition: String = "", // Target scouting position
+    val scoutingWeeksPassed: Int = 0, // Counting duration of Scouting
+    val selectedSponsor: String = "None" // Persistent active jersey sponsor
 )
 
 @Entity(tableName = "clubs")
@@ -35,7 +50,8 @@ data class ClubEntity(
     val goalsAgainst: Int = 0,
     val points: Int = 0,
     val formation: String = "4-4-2", // e.g. "4-4-2", "4-3-3", "3-5-2"
-    val tactic: String = "Balanced" // "Defensive", "Balanced", "Offensive"
+    val tactic: String = "Balanced", // "Defensive", "Balanced", "Offensive"
+    val league: String = "SPL"
 )
 
 @Entity(tableName = "players")
