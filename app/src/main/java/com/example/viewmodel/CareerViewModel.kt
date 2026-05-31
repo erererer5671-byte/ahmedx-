@@ -414,6 +414,14 @@ class CareerViewModel(application: Application) : AndroidViewModel(application) 
         chem.coerceIn(20, 100)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 80)
 
+    // User Coach Tactic state
+    private val _userTactic = MutableStateFlow("Gegenpressing")
+    val userTactic = _userTactic.asStateFlow()
+
+    fun selectUserTactic(tactic: String) {
+        _userTactic.value = tactic
+    }
+
     // Opponent dynamic tactical state during match simulation
     private val _opponentCurrentTactic = MutableStateFlow("Balanced")
     val opponentCurrentTactic = _opponentCurrentTactic.asStateFlow()
@@ -1422,6 +1430,53 @@ class CareerViewModel(application: Application) : AndroidViewModel(application) 
 
             var uGoalsBonus = 0
             var oppGoalsBonus = 0
+            val activeTactic = userTactic.value
+            val tacticsLog = mutableListOf<String>()
+
+            // Apply selected tactic
+            when (activeTactic) {
+                "Gegenpressing" -> {
+                    if (uEnergyAvg >= 75) {
+                        uGoalsBonus += 1
+                        tacticsLog.add("📋 تكتيك Gegenpressing: الضغط الخانق أجبر المنافس على ارتكاب الهفوات واستعادة الكرة سريعا.")
+                    } else {
+                        oppGoalsBonus += 1
+                        tacticsLog.add("⚠️ تعب تكتيكي: فشل لاعبو الفريق في تطبيق الـ Gegenpressing لتدني مخزون الطاقة اللياقية.")
+                    }
+                }
+                "Tiki-Taka" -> {
+                    if (uRating >= oppRating - 5) {
+                        uGoalsBonus += 1
+                        tacticsLog.add("📋 تكتيك Tiki-Taka: الاستحواذ على الكرة والتمريرات القصيرة المثلثة أربكت خطوط دفاع المنافس.")
+                    } else {
+                        tacticsLog.add("📋 تكتيك Tiki-Taka: عانى لاعبونا من قطع الكرات بسبب التفوق البدني للخصم.")
+                    }
+                }
+                "Wing Play" -> {
+                    if (Random.nextBoolean()) {
+                        uGoalsBonus += 1
+                        tacticsLog.add("📋 تكتيك Wing Play: العرضيات السريعة من الأطراف أثمرت عن فرص غاية في الخطورة داخل الصندوق.")
+                    } else {
+                        tacticsLog.add("📋 تكتيك Wing Play: نجح دفاع الخصم في التصدي لعرضياتنا الطائرة بسهولة.")
+                    }
+                }
+                "Counter-Attack" -> {
+                    if (fixture.awayTeamId == uClub.id) {
+                        uGoalsBonus += 1
+                        tacticsLog.add("📋 تكتيك Counter-Attack: لدغات مرتدة حاسمة وسريعة كشفت دفاع الخصم المتقدم على أرضه.")
+                    } else {
+                        if (Random.nextBoolean()) {
+                            uGoalsBonus += 1
+                            tacticsLog.add("📋 تكتيك Counter-Attack: تحول سريع خاطف من الدفاع للهجوم باغت المنافس.")
+                        }
+                    }
+                }
+                "Park the Bus" -> {
+                    oppGoalsBonus -= 1
+                    uGoalsBonus -= 1
+                    tacticsLog.add("📋 تكتيك Park the Bus: إغلاق المساحات وتأمين الدفاع بحصار حديدي شل فاعلية هجوم الخصم.")
+                }
+            }
 
             // Opponent AI analyzes user weaknesses
             if (uDefending < 75) {
@@ -1431,8 +1486,12 @@ class CareerViewModel(application: Application) : AndroidViewModel(application) 
                 oppGoalsBonus += 1 // Exploit high exhaustion
             }
 
-            val uGoalsChance = (Random.nextInt(0, 4) + (diff / 6)).coerceIn(0, 5) + uGoalsBonus
-            val oppGoalsChance = (Random.nextInt(0, 4) - (diff / 6)).coerceIn(0, 5) + oppGoalsBonus
+            var uGoalsChance = (Random.nextInt(0, 4) + (diff / 6)).coerceIn(0, 5) + uGoalsBonus
+            var oppGoalsChance = (Random.nextInt(0, 4) - (diff / 6)).coerceIn(0, 5) + oppGoalsBonus
+
+            // Ensure goals are non-negative
+            uGoalsChance = uGoalsChance.coerceAtLeast(0)
+            oppGoalsChance = oppGoalsChance.coerceAtLeast(0)
 
             val updatedFixture = fixture.copy(
                 homeScore = if (fixture.homeTeamId == uClub.id) uGoalsChance else oppGoalsChance,
@@ -1451,6 +1510,7 @@ class CareerViewModel(application: Application) : AndroidViewModel(application) 
 
             // Match is completed, update match state
             val scorersList = mutableListOf<String>()
+            scorersList.addAll(tacticsLog)
             val uScorers = uSquad.filter { it.position == "ATT" || it.position == "MID" }
             val oppScorers = oppSquad.filter { it.position == "ATT" || it.position == "MID" }
 

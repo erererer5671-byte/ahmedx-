@@ -65,6 +65,7 @@ fun SoccerAppMainView(viewModel: CareerViewModel) {
     val journals by viewModel.journalsState.collectAsStateWithLifecycle()
     val loanedOutPlayers by viewModel.loanedOutPlayers.collectAsStateWithLifecycle()
     val isSkippingSeason by viewModel.isSkippingSeason.collectAsStateWithLifecycle()
+    val userTactic by viewModel.userTactic.collectAsStateWithLifecycle()
 
     if (isSkippingSeason) {
         Dialog(onDismissRequest = {}) {
@@ -203,6 +204,8 @@ fun SoccerAppMainView(viewModel: CareerViewModel) {
                                 opponentClub = opponentClub,
                                 userSquad = userSquad,
                                 fixtures = fixtures,
+                                userTactic = userTactic,
+                                onSelectTactic = { viewModel.selectUserTactic(it) },
                                 onStartMatch = { viewModel.startInteractiveMatch() },
                                 onQuickSim = { viewModel.quickSimulateMatch() },
                                 onAdvanceWeek = { viewModel.advanceWeek() },
@@ -713,6 +716,8 @@ fun HomeScreen(
     opponentClub: ClubEntity?,
     userSquad: List<PlayerEntity>,
     fixtures: List<FixtureEntity>,
+    userTactic: String,
+    onSelectTactic: (String) -> Unit,
     onStartMatch: () -> Unit,
     onQuickSim: () -> Unit,
     onAdvanceWeek: () -> Unit,
@@ -1300,6 +1305,135 @@ fun HomeScreen(
                                         ) {
                                             Text("إنهاء الجيم ❌", fontSize = 11.sp)
                                         }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        item {
+            // Coach Tactic Selection Card
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 16.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF131A22)),
+                border = BorderStroke(1.2.dp, Color(0xFFF9A825)),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .background(Color(0xFFF57F17), RoundedCornerShape(6.dp))
+                                .padding(horizontal = 8.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = "تكتيك المدرب / Coach Tactic 🧠",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.Black
+                            )
+                        }
+                        Text(
+                            text = "أسلوب وقوة اللعب التكتيكية",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFFFFE082)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "اختر فلسفتك الكروية المناسبة لمواجهة الخصم المقبل وتعديل حظوظ الفوز التكتيكية:",
+                        fontSize = 11.sp,
+                        color = Color(0xFFCFD8DC),
+                        textAlign = TextAlign.Right,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    val tacticsList = listOf(
+                        Triple("Gegenpressing", "Gegenpressing 🏃‍♂️💨", "الضغط العالي المستمر وخنق الخصم (يتطلب طاقة > 75)."),
+                        Triple("Tiki-Taka", "Tiki-Taka 📐⚽", "الاستحواذ، التمرير القصير السريع والسيطرة على خط الوسط."),
+                        Triple("Wing Play", "Wing Play 🪽⚡", "صنع العرضيات والاعتماد على الأطراف والهجوم المفتوح."),
+                        Triple("Counter-Attack", "Counter-Attack 🏹🏎️", "الارتداد السريع المباغت والهجمات السريعة الخاطفة."),
+                        Triple("Park the Bus", "Park the Bus 🧱🚌", "الدفاع الإغلاقي الحديدي (يقلل أهدافك وأهداف الخصم).")
+                    )
+
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        tacticsList.forEach { (key, name, desc) ->
+                            val isSelected = userTactic == key
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(
+                                        if (isSelected) Color(0xFFE65100) else Color(0xFF1E252D),
+                                        RoundedCornerShape(8.dp)
+                                    )
+                                    .border(
+                                        1.dp,
+                                        if (isSelected) Color(0xFFFFB74D) else Color(0xFF37474F),
+                                        RoundedCornerShape(8.dp)
+                                    )
+                                    .clickable { onSelectTactic(key) }
+                                    .padding(12.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    if (isSelected) {
+                                        Box(
+                                            modifier = Modifier
+                                                .background(Color(0xFFFFEA00), RoundedCornerShape(4.dp))
+                                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                                        ) {
+                                            Text(
+                                                text = "مفعل حالياً ✔️",
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color.Black
+                                            )
+                                        }
+                                    } else {
+                                        Box(
+                                            modifier = Modifier
+                                                .background(Color(0xFF37474F), RoundedCornerShape(4.dp))
+                                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                                        ) {
+                                            Text(
+                                                text = "تحديد كخطة ⚙️",
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color.White
+                                            )
+                                        }
+                                    }
+
+                                    Column(horizontalAlignment = Alignment.End, modifier = Modifier.weight(1f).padding(start = 8.dp)) {
+                                        Text(
+                                            text = name,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White,
+                                            textAlign = TextAlign.Right
+                                        )
+                                        Text(
+                                            text = desc,
+                                            fontSize = 10.sp,
+                                            color = Color(0xFFB0BEC5),
+                                            textAlign = TextAlign.Right
+                                        )
                                     }
                                 }
                             }
