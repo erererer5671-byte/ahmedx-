@@ -12,6 +12,7 @@ class CareerRepository(private val careerDao: CareerDao) {
     val newsFlow: Flow<List<NewsEntity>> = careerDao.getNewsFlow()
     val fixturesFlow: Flow<List<FixtureEntity>> = careerDao.getFixturesFlow()
     val journalsFlow: Flow<List<JournalEntity>> = careerDao.getJournalsFlow()
+    val recordsFlow: Flow<List<RecordEntity>> = careerDao.getRecordsFlow()
 
     fun getPlayersByClubFlow(clubId: Int): Flow<List<PlayerEntity>> = careerDao.getPlayersByClubFlow(clubId)
     val transferPlayersFlow: Flow<List<PlayerEntity>> = careerDao.getTransferListPlayersFlow()
@@ -62,21 +63,29 @@ class CareerRepository(private val careerDao: CareerDao) {
         selectedClubId: Int,
         careerMode: String = "Manager",
         playerPosition: String = "ATT",
-        leagueCode: String = "SPL"
+        leagueCode: String = "EGY"
     ) {
         careerDao.clearCareerData()
 
         // 1. Predefined 48+ Clubs across Leagues (Saudi Pro League + Big Five European Leagues + Championship/League One)
         val clubs = listOf(
-            // SPL (Saudi Pro League)
-            ClubEntity(id = 1, name = "Al-Hilal", nameAr = "الهلال 👑", shortName = "HIL", primaryColor = 0xFF0D47A1, secondaryColor = 0xFF1976D2, reputation = 87, budget = 140_000_000L, league = "SPL"),
-            ClubEntity(id = 2, name = "Al-Nassr", nameAr = "النصر 💛", shortName = "NAS", primaryColor = 0xFFFFEB3B, secondaryColor = 0xFF004D40, reputation = 85, budget = 120_000_000L, league = "SPL"),
-            ClubEntity(id = 3, name = "Al-Ittihad", nameAr = "الاتحاد 🖤", shortName = "ITT", primaryColor = 0xFF212121, secondaryColor = 0xFFFFD700, reputation = 83, budget = 110_000_000L, league = "SPL"),
-            ClubEntity(id = 4, name = "Al-Ahli", nameAr = "الأهلي 💚", shortName = "AHL", primaryColor = 0xFF1B5E20, secondaryColor = 0xFFFFFFFF, reputation = 82, budget = 95_000_000L, league = "SPL"),
-            ClubEntity(id = 5, name = "Al-Shabab", nameAr = "الشباب 🤍", shortName = "SHB", primaryColor = 0xFF757575, secondaryColor = 0xFF212121, reputation = 78, budget = 65_000_000L, league = "SPL"),
-            ClubEntity(id = 6, name = "Al-Ettifaq", nameAr = "الاتفاق ❤️", shortName = "ETF", primaryColor = 0xFFD84315, secondaryColor = 0xFF1B5E20, reputation = 77, budget = 50_000_000L, league = "SPL"),
-            ClubEntity(id = 49, name = "Al-Taawoun", nameAr = "التعاون 🐺", shortName = "TAW", primaryColor = 0xFFFFD700, secondaryColor = 0xFF0D47A1, reputation = 75, budget = 35_000_000L, league = "SPL"),
-            ClubEntity(id = 50, name = "Al-Fateh", nameAr = "الفتح 🟢💙", shortName = "FAT", primaryColor = 0xFF1E88E5, secondaryColor = 0xFF2E7D32, reputation = 73, budget = 25_000_000L, league = "SPL"),
+            // EGY (Egyptian Premier League)
+            ClubEntity(id = 1, name = "Al-Ahly", nameAr = "🔴🦅 الأهلي", shortName = "AHL", primaryColor = 0xFFC62828, secondaryColor = 0xFFFFFFFF, reputation = 88, budget = 150_000_000L, league = "EGY"),
+            ClubEntity(id = 2, name = "Zamalek", nameAr = "⚪🏹 الزمالك", shortName = "ZAM", primaryColor = 0xFFECEFF1, secondaryColor = 0xFFC62828, reputation = 85, budget = 110_000_000L, league = "EGY"),
+            ClubEntity(id = 3, name = "Pyramids", nameAr = "🔵 بيراميدز", shortName = "PYR", primaryColor = 0xFF1976D2, secondaryColor = 0xFF0D47A1, reputation = 84, budget = 140_000_000L, league = "EGY"),
+            ClubEntity(id = 4, name = "Al-Masry", nameAr = "🟢 المصري البورسعيدي", shortName = "MAS", primaryColor = 0xFF2E7D32, secondaryColor = 0xFFFFFFFF, reputation = 78, budget = 65_000_000L, league = "EGY"),
+            ClubEntity(id = 5, name = "Al-Ittihad", nameAr = "🟢⚪ الاتحاد السكندري", shortName = "ITA", primaryColor = 0xFF1B5E20, secondaryColor = 0xFFFFFFFF, reputation = 76, budget = 35_000_000L, league = "EGY"),
+            ClubEntity(id = 6, name = "Smouha", nameAr = "🔵 سموحة", shortName = "SMO", primaryColor = 0xFF1E88E5, secondaryColor = 0xFFFFFFFF, reputation = 74, budget = 25_000_000L, league = "EGY"),
+            ClubEntity(id = 49, name = "Ismaily", nameAr = "🟡 الإسماعيلي", shortName = "ISM", primaryColor = 0xFFFBC02D, secondaryColor = 0xFF0D47A1, reputation = 75, budget = 30_000_000L, league = "EGY"),
+            ClubEntity(id = 50, name = "Ghazl El-Mahalla", nameAr = "🔵🟡 غزل المحلة", shortName = "GHA", primaryColor = 0xFF29B6F6, secondaryColor = 0xFFFBC02D, reputation = 71, budget = 15_000_000L, league = "EGY"),
+            ClubEntity(id = 61, name = "ZED FC", nameAr = "⚫ زد", shortName = "ZED", primaryColor = 0xFF212121, secondaryColor = 0xFFFFD700, reputation = 75, budget = 30_000_000L, league = "EGY"),
+            ClubEntity(id = 62, name = "Ceramica", nameAr = "🔴 سيراميكا كليوباترا", shortName = "CER", primaryColor = 0xFFB71C1C, secondaryColor = 0xFFE0E0E0, reputation = 74, budget = 35_000_000L, league = "EGY"),
+            ClubEntity(id = 63, name = "ENPPI", nameAr = "🔵 إنبي", shortName = "ENP", primaryColor = 0xFF1A237E, secondaryColor = 0xFFFFFFFF, reputation = 73, budget = 20_000_000L, league = "EGY"),
+            ClubEntity(id = 64, name = "Army-Talaea", nameAr = "🪖 طلائع الجيش", shortName = "TAL", primaryColor = 0xFF795548, secondaryColor = 0xFF3E2723, reputation = 72, budget = 20_000_000L, league = "EGY"),
+            ClubEntity(id = 65, name = "National-Bank", nameAr = "🏦 البنك الأهلي", shortName = "NBE", primaryColor = 0xFF006064, secondaryColor = 0xFFFFFFFF, reputation = 72, budget = 25_000_000L, league = "EGY"),
+            ClubEntity(id = 66, name = "El-Gouna", nameAr = "🌴 الجونة", shortName = "GOU", primaryColor = 0xFF009688, secondaryColor = 0xFFFFEB3B, reputation = 70, budget = 10_000_000L, league = "EGY"),
+            ClubEntity(id = 67, name = "Modern-Sport", nameAr = "⚪ مودرن سبورت", shortName = "MOD", primaryColor = 0xFF37474F, secondaryColor = 0xFFECEFF1, reputation = 74, budget = 30_000_000L, league = "EGY"),
+            ClubEntity(id = 68, name = "Haras-ElHodoud", nameAr = "⚔️ حرس الحدود", shortName = "HAR", primaryColor = 0xFFD84315, secondaryColor = 0xFF212121, reputation = 70, budget = 10_000_000L, league = "EGY"),
 
             // EPL (English Premier League)
             ClubEntity(id = 7, name = "Manchester City", nameAr = "مانشستر سيتي 🩵", shortName = "MCI", primaryColor = 0xFF80D8FF, secondaryColor = 0xFFECEFF1, reputation = 92, budget = 190_000_000L, league = "EPL"),
@@ -142,7 +151,17 @@ class CareerRepository(private val careerDao: CareerDao) {
             ClubEntity(id = 45, name = "Bolton Wanderers", nameAr = "بولتون 🐘", shortName = "BOL", primaryColor = 0xFFF8FAFC, secondaryColor = 0xFF1E3A8A, reputation = 63, budget = 10_000_000L, league = "EL1"),
             ClubEntity(id = 46, name = "Peterborough", nameAr = "بيتربورو 🔵", shortName = "PET", primaryColor = 0xFF2563EB, secondaryColor = 0xFFFFFFFF, reputation = 62, budget = 8_500_000L, league = "EL1"),
             ClubEntity(id = 47, name = "Barnsley", nameAr = "بارنسلي 🔴", shortName = "BAR", primaryColor = 0xFFDC2626, secondaryColor = 0xFFFFFFFF, reputation = 61, budget = 8_000_000L, league = "EL1"),
-            ClubEntity(id = 48, name = "Oxford United", nameAr = "أكسفورد يونايتد 🐂", shortName = "OXF", primaryColor = 0xFFFACC15, secondaryColor = 0xFF1E3A8A, reputation = 60, budget = 7_500_000L, league = "EL1")
+            ClubEntity(id = 48, name = "Oxford United", nameAr = "أكسفورد يونايتد 🐂", shortName = "OXF", primaryColor = 0xFFFACC15, secondaryColor = 0xFF1E3A8A, reputation = 60, budget = 7_500_000L, league = "EL1"),
+
+            // NAT (National Teams 🇸🇦 🇪🇬 🇫🇷 🏴󠁧󠁢󠁥󠁮󠁧󠁿 🇦🇷 🇧🇷 🇪🇸 🇩🇪)
+            ClubEntity(id = 101, name = "Saudi Arabia", nameAr = "السعودية 🇸🇦", shortName = "KSA", primaryColor = 0xFF1B5E20, secondaryColor = 0xFFFFFFFF, reputation = 75, budget = 250_000_000L, league = "NAT"),
+            ClubEntity(id = 102, name = "Egypt", nameAr = "مصر 🇪🇬", shortName = "EGY", primaryColor = 0xFFB71C1C, secondaryColor = 0xFFFFFFFF, reputation = 78, budget = 200_000_000L, league = "NAT"),
+            ClubEntity(id = 103, name = "France", nameAr = "فرنسا 🇫🇷", shortName = "FRA", primaryColor = 0xFF0D47A1, secondaryColor = 0xFFFFD54F, reputation = 92, budget = 400_000_000L, league = "NAT"),
+            ClubEntity(id = 104, name = "England", nameAr = "إنجلترا 🏴󠁧󠁢󠁥󠁮󠁧󠁿", shortName = "ENG", primaryColor = 0xFFECEFF1, secondaryColor = 0xFFC62828, reputation = 90, budget = 420_000_000L, league = "NAT"),
+            ClubEntity(id = 105, name = "Argentina", nameAr = "الأرجنتين 🇦🇷", shortName = "ARG", primaryColor = 0xFF29B6F6, secondaryColor = 0xFFFFFFFF, reputation = 94, budget = 450_000_000L, league = "NAT"),
+            ClubEntity(id = 106, name = "Brazil", nameAr = "البرازيل 🇧🇷", shortName = "BRA", primaryColor = 0xFFFFEB3B, secondaryColor = 0xFF2E7D32, reputation = 91, budget = 430_000_000L, league = "NAT"),
+            ClubEntity(id = 107, name = "Spain", nameAr = "إسبانيا 🇪🇸", shortName = "ESP", primaryColor = 0xFFE53935, secondaryColor = 0xFFFFD54F, reputation = 89, budget = 410_000_000L, league = "NAT"),
+            ClubEntity(id = 108, name = "Germany", nameAr = "ألمانيا 🇩🇪", shortName = "GER", primaryColor = 0xFF212121, secondaryColor = 0xFFFFD700, reputation = 87, budget = 390_000_000L, league = "NAT")
         ).map {
             if (it.id == selectedClubId) it.copy(isUser = true) else it
         }
@@ -153,7 +172,7 @@ class CareerRepository(private val careerDao: CareerDao) {
         val playersDatabaseList = mutableListOf<PlayerEntity>()
 
         val firstNames = mapOf(
-            "SPL" to listOf("سالم", "عبدالرحمن", "فراس", "محمد", "علي", "سلطان", "فيصل", "حسن", "عبدالله", "صالح", "سلمان", "ياسر", "سعد", "خالد", "أحمد", "نواف"),
+            "EGY" to listOf("أحمد", "محمد", "عمرو", "مصطفى", "محمود", "كريم", "حسين", "إمام", "طارق", "مروان", "سيف", "عمر", "شريف", "حسام", "إسماعيل", "ياسر", "علي", "خالد", "عبدالله", "يوسف"),
             "EPL" to listOf("James", "John", "Harry", "Jack", "George", "Oliver", "William", "Charlie", "Thomas", "Mason", "Cole", "Declan", "Marcus", "Trent"),
             "LAL" to listOf("Carlos", "Luis", "Javier", "Manuel", "Sergio", "Diego", "Andres", "Alejandro", "Pedro", "Felipe", "Pablo", "Mateo", "Hugo"),
             "SER" to listOf("Giovanni", "Marco", "Alessandro", "Luca", "Lorenzo", "Andrea", "Francesco", "Matteo", "Davide", "Giuseppe", "Nicolo", "Federico"),
@@ -161,7 +180,7 @@ class CareerRepository(private val careerDao: CareerDao) {
             "FRA" to listOf("Lucas", "Arthur", "Mathis", "Hugo", "Enzo", "Clement", "Nathan", "Romain", "Damien", "Julien", "Antoine", "Pierre", "Jean")
         )
         val lastNames = mapOf(
-            "SPL" to listOf("الدوسري", "غريب", "البريكان", "العويس", "البليهي", "الغنام", "الغامدي", "كادش", "الحمدان", "الشهري", "الفرج", "الحربي", "المولد", "البقمي"),
+            "EGY" to listOf("عاشور", "حسن", "الشناوي", "فتحي", "الخطيب", "سالم", "جمال", "شيكابالا", "أبو علي", "سعيد", "سليمان", "صلاح", "إبراهيم", "حامد", "فتوح", "عبد المنعم", "زيزو", "الشحات"),
             "EPL" to listOf("Smith", "Jones", "Taylor", "Brown", "Wilson", "Evans", "Thomas", "Roberts", "Walker", "Palmer", "Mount", "Kane", "Saka", "Foden"),
             "LAL" to listOf("Gomez", "Lopez", "Garcia", "Fernandez", "Rodriguez", "Torres", "Martinez", "Sanchez", "Perez", "Navas", "Carvajal", "Alba"),
             "SER" to listOf("Rossi", "Ferrari", "Russo", "Bianchi", "Gallo", "Costa", "Barella", "Chiesa", "Bastoni", "Donnarumma", "Locatelli", "Dimarco"),
@@ -171,28 +190,28 @@ class CareerRepository(private val careerDao: CareerDao) {
 
         val predefinedSquads = mapOf(
             1 to listOf(
-                Pair("Yassine Bounou", "GK"), Pair("Saud Abdulhamid", "DEF"), Pair("Kalidou Koulibaly", "DEF"),
-                Pair("Ali Al-Bulaihi", "DEF"), Pair("Renan Lodi", "DEF"), Pair("Rúben Neves", "MID"),
-                Pair("S. Milinković-Savić", "MID"), Pair("Mohamed Kanno", "MID"), Pair("Neymar Jr", "ATT"),
-                Pair("Aleksandar Mitrović", "ATT"), Pair("Salem Al-Dawsari", "ATT")
+                Pair("Mohamed El-Shenawy", "GK"), Pair("Mohamed Abdelmonem", "DEF"), Pair("Ali Maaloul", "DEF"),
+                Pair("Yasser Ibrahim", "DEF"), Pair("Mohamed Hany", "DEF"), Pair("Emam Ashour", "MID"),
+                Pair("Marwan Attia", "MID"), Pair("Afsha (Magdy)", "MID"), Pair("Wessam Abou Ali", "ATT"),
+                Pair("Hussein El-Shahat", "ATT"), Pair("Percy Tau", "ATT")
             ),
             2 to listOf(
-                Pair("David Ospina", "GK"), Pair("Sultan Al-Ghannam", "DEF"), Pair("Aymeric Laporte", "DEF"),
-                Pair("Alex Telles", "DEF"), Pair("Ali Lajami", "DEF"), Pair("Marcelo Brozović", "MID"),
-                Pair("Otávio", "MID"), Pair("Seko Fofana", "MID"), Pair("Cristiano Ronaldo", "ATT"),
-                Pair("Sadio Mané", "ATT"), Pair("Abdulrahman Ghareeb", "ATT")
+                Pair("Mohamed Awad", "GK"), Pair("Hamza Mathlouthi", "DEF"), Pair("Ahmed Fatouh", "DEF"),
+                Pair("Hossam Abdelmaguid", "DEF"), Pair("Omar Jaber", "DEF"), Pair("Nabil Dunga", "MID"),
+                Pair("Abdallah El-Said", "MID"), Pair("Ahmed Hamdi", "MID"), Pair("Zizo (Ahmed Sayed)", "ATT"),
+                Pair("Seifeddine Jaziri", "ATT"), Pair("Shikabala", "ATT")
             ),
             3 to listOf(
-                Pair("Marcelo Grohe", "GK"), Pair("Luiz Felipe", "DEF"), Pair("Ahmed Hegazi", "DEF"),
-                Pair("Hassan Kadesh", "DEF"), Pair("Ahmed Bamasoud", "DEF"), Pair("N'Golo Kanté", "MID"),
-                Pair("Fabinho", "MID"), Pair("Faisal Al-Ghamdi", "MID"), Pair("Karim Benzema", "ATT"),
-                Pair("Abderrazak Hamdallah", "ATT"), Pair("Romarinho", "ATT")
+                Pair("Ahmed El-Shenawy", "GK"), Pair("Ali Gabr", "DEF"), Pair("Mohamed Chibi", "DEF"),
+                Pair("Ahmed Samy", "DEF"), Pair("Karim Hafez", "DEF"), Pair("Blati Toure", "MID"),
+                Pair("Walid El Karti", "MID"), Pair("Ramadan Sobhi", "ATT"), Pair("Mostafa Fathi", "ATT"),
+                Pair("Fiston Mayele", "ATT"), Pair("Moustafa Fathi", "ATT")
             ),
             4 to listOf(
-                Pair("Edouard Mendy", "GK"), Pair("Roger Ibañez", "DEF"), Pair("Merih Demiral", "DEF"),
-                Pair("Ali Majrashi", "DEF"), Pair("Abdullah Al-Ammar", "DEF"), Pair("Franck Kessié", "MID"),
-                Pair("Gabri Veiga", "MID"), Pair("Sumayhan Al-Nabit", "MID"), Pair("Riyad Mahrez", "ATT"),
-                Pair("Allan Saint-Maximin", "ATT"), Pair("Firas Al-Buraikan", "ATT")
+                Pair("Mahmoud Gad", "GK"), Pair("Baher El Mohamady", "DEF"), Pair("Amr Moussa", "DEF"),
+                Pair("Karim El Eraki", "DEF"), Pair("Amr El Saadawy", "DEF"), Pair("Moataz Zadam", "MID"),
+                Pair("Ghayas Zahid", "MID"), Pair("Mido Jaber", "ATT"), Pair("Salah Mohsen", "ATT"),
+                Pair("Fakhreddine Ben Youssef", "ATT"), Pair("Abderrahmane Djamil", "ATT")
             ),
             7 to listOf(
                 Pair("Ederson Moraes", "GK"), Pair("Rúben Dias", "DEF"), Pair("John Stones", "DEF"),
@@ -277,6 +296,62 @@ class CareerRepository(private val careerDao: CareerDao) {
                 Pair("Lucas Hernandez", "DEF"), Pair("Nuno Mendes", "DEF"), Pair("Vitinha", "MID"),
                 Pair("Warren Zaïre-Emery", "MID"), Pair("Fabián Ruiz", "MID"), Pair("Ousmane Dembélé", "ATT"),
                 Pair("Randal Kolo Muani", "ATT"), Pair("Bradley Barcola", "ATT")
+            ),
+            // Saudi Arabia national roster 🇸🇦
+            101 to listOf(
+                Pair("Mohammed Al-Owais", "GK"), Pair("Saud Abdulhamid", "DEF"), Pair("Ali Al-Bulayhi", "DEF"),
+                Pair("Yasir Al-Shahrani", "DEF"), Pair("Hassan Tambakti", "DEF"), Pair("Mohamed Kanno", "MID"),
+                Pair("Faisal Al-Ghamdi", "MID"), Pair("Abdulelah Al-Malki", "MID"), Pair("Salem Al-Dawsari", "ATT"),
+                Pair("Firas Al-Buraikan", "ATT"), Pair("Abdulrahman Ghareeb", "ATT")
+            ),
+            // Egypt national roster 🇪🇬
+            102 to listOf(
+                Pair("Mohamed El-Shenawy", "GK"), Pair("Ahmed Hegazi", "DEF"), Pair("Mohamed Abdelmonem", "DEF"),
+                Pair("Ahmed Fatouh", "DEF"), Pair("Mohamed Hany", "DEF"), Pair("Hamdi Fathi", "MID"),
+                Pair("Marwan Attia", "MID"), Pair("Mohamed Elneny", "MID"), Pair("Mohamed Salah", "ATT"),
+                Pair("Mostafa Mohamed", "ATT"), Pair("Trezeguet (M. Hassan)", "ATT")
+            ),
+            // France national roster 🇫🇷
+            103 to listOf(
+                Pair("Mike Maignan", "GK"), Pair("William Saliba", "DEF"), Pair("Ibrahima Konaté", "DEF"),
+                Pair("Theo Hernandez", "DEF"), Pair("Jules Koundé", "DEF"), Pair("A. Tchouaméni", "MID"),
+                Pair("Eduardo Camavinga", "MID"), Pair("Adrien Rabiot", "MID"), Pair("Kylian Mbappé", "ATT"),
+                Pair("Antoine Griezmann", "ATT"), Pair("Ousmane Dembélé", "ATT")
+            ),
+            // England national roster 🏴󠁧󠁢󠁥󠁮󠁧󠁿
+            104 to listOf(
+                Pair("Jordan Pickford", "GK"), Pair("John Stones", "DEF"), Pair("Marc Guéhi", "DEF"),
+                Pair("Kyle Walker", "DEF"), Pair("Kieran Trippier", "DEF"), Pair("Declan Rice", "MID"),
+                Pair("Jude Bellingham", "MID"), Pair("Kobbie Mainoo", "MID"), Pair("Harry Kane", "ATT"),
+                Pair("Bukayo Saka", "ATT"), Pair("Phil Foden", "ATT")
+            ),
+            // Argentina national roster 🇦🇷
+            105 to listOf(
+                Pair("Emi Martínez", "GK"), Pair("Cristian Romero", "DEF"), Pair("Nicolás Otamendi", "DEF"),
+                Pair("Nahuel Molina", "DEF"), Pair("Nicolás Tagliafico", "DEF"), Pair("Enzo Fernández", "MID"),
+                Pair("Alexis Mac Allister", "MID"), Pair("Rodrigo De Paul", "MID"), Pair("Lionel Messi", "ATT"),
+                Pair("Lautaro Martínez", "ATT"), Pair("Julián Álvarez", "ATT")
+            ),
+            // Brazil national roster 🇧🇷
+            106 to listOf(
+                Pair("Ederson Moraes", "GK"), Pair("Marquinhos", "DEF"), Pair("Gabriel Magalhães", "DEF"),
+                Pair("Danilo", "DEF"), Pair("Wendell", "DEF"), Pair("Bruno Guimarães", "MID"),
+                Pair("Douglas Luiz", "MID"), Pair("Lucas Paquetá", "MID"), Pair("Vinícius Jr", "ATT"),
+                Pair("Rodrygo Goes", "ATT"), Pair("Raphinha Dias", "ATT")
+            ),
+            // Spain national roster 🇪🇸
+            107 to listOf(
+                Pair("Unai Simón", "GK"), Pair("Robin Le Normand", "DEF"), Pair("Aymeric Laporte", "DEF"),
+                Pair("Dani Carvajal", "DEF"), Pair("Marc Cucurella", "DEF"), Pair("Rodri Hernandez", "MID"),
+                Pair("Pedri Gonzalez", "MID"), Pair("Fabián Ruiz", "MID"), Pair("Lamine Yamal", "ATT"),
+                Pair("Nico Williams", "ATT"), Pair("Dani Olmo", "ATT")
+            ),
+            // Germany national roster 🇩🇪
+            108 to listOf(
+                Pair("Manuel Neuer", "GK"), Pair("Antonio Rüdiger", "DEF"), Pair("Jonathan Tah", "DEF"),
+                Pair("Joshua Kimmich", "MID"), Pair("Robert Andrich", "MID"), Pair("Toni Kroos", "MID"),
+                Pair("Ilkay Gündogan", "MID"), Pair("Florian Wirtz", "MID"), Pair("Jamal Musiala", "MID"),
+                Pair("Kai Havertz", "ATT"), Pair("Niclas Füllkrug", "ATT")
             )
         )
 
@@ -332,7 +407,7 @@ class CareerRepository(private val careerDao: CareerDao) {
                 }
             } else {
                 val lang = when (c.league) {
-                    "SPL" -> "SPL"
+                    "EGY" -> "EGY"
                     "EPL", "ECHA", "EL1" -> "EPL"
                     "LAL" -> "LAL"
                     "SER" -> "SER"
@@ -668,5 +743,9 @@ class CareerRepository(private val careerDao: CareerDao) {
         val updatedCareer = career.copy(budget = career.budget - cost)
         careerDao.insertCareer(updatedCareer)
         return true
+    }
+
+    suspend fun insertRecord(record: RecordEntity) {
+        careerDao.insertRecord(record)
     }
 }

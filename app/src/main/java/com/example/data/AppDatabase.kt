@@ -12,9 +12,10 @@ import androidx.room.RoomDatabase
         PlayerEntity::class,
         FixtureEntity::class,
         NewsEntity::class,
-        JournalEntity::class
+        JournalEntity::class,
+        RecordEntity::class
     ],
-    version = 5,
+    version = 7,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

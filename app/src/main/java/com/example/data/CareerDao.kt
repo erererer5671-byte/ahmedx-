@@ -103,6 +103,16 @@ interface CareerDao {
     @Query("DELETE FROM journals")
     suspend fun deleteAllJournals()
 
+    // Records
+    @Query("SELECT * FROM history_records ORDER BY season DESC")
+    fun getRecordsFlow(): Flow<List<RecordEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertRecord(record: RecordEntity)
+
+    @Query("DELETE FROM history_records")
+    suspend fun deleteAllRecords()
+
     @Transaction
     suspend fun clearCareerData() {
         deleteCareer()
@@ -111,5 +121,6 @@ interface CareerDao {
         deleteAllFixtures()
         deleteAllNews()
         deleteAllJournals()
+        deleteAllRecords()
     }
 }

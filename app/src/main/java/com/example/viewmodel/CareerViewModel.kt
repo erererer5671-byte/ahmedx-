@@ -77,12 +77,19 @@ class CareerViewModel(application: Application) : AndroidViewModel(application) 
     private val _journalsState = MutableStateFlow<List<JournalEntity>>(emptyList())
     val journalsState = _journalsState.asStateFlow()
 
+    private val _recordsState = MutableStateFlow<List<RecordEntity>>(emptyList())
+    val recordsState = _recordsState.asStateFlow()
+
     private val _loanedOutPlayers = MutableStateFlow<List<PlayerEntity>>(emptyList())
     val loanedOutPlayers = _loanedOutPlayers.asStateFlow()
 
     // Scout Discoveries Flow
     private val _scoutDiscoveries = MutableStateFlow<List<PlayerEntity>>(emptyList())
     val scoutDiscoveries = _scoutDiscoveries.asStateFlow()
+
+    // Academy Youth Squad Flow
+    private val _academyYouthSquad = MutableStateFlow<List<PlayerEntity>>(emptyList())
+    val academyYouthSquad = _academyYouthSquad.asStateFlow()
 
     // Resignation and Job Offers tracking
     private val _isResignedState = MutableStateFlow(false)
@@ -205,6 +212,12 @@ class CareerViewModel(application: Application) : AndroidViewModel(application) 
             }
 
             launch {
+                repoForSlot.recordsFlow.collect { list ->
+                    _recordsState.value = list
+                }
+            }
+
+            launch {
                 repoForSlot.transferPlayersFlow.collect { list ->
                     _transferPlayersState.value = list
                 }
@@ -219,6 +232,7 @@ class CareerViewModel(application: Application) : AndroidViewModel(application) 
                         emptyList()
                     }
                     _scoutDiscoveries.value = list.filter { it.clubId == -2 }
+                    _academyYouthSquad.value = list.filter { it.clubId == -10 }
                 }
             }
         }
@@ -434,6 +448,51 @@ class CareerViewModel(application: Application) : AndroidViewModel(application) 
         _trainingFeedback.value = null
     }
 
+    fun investWages(type: String, cost: Int, nameAr: String) {
+        val career = careerState.value ?: return
+        if (career.managerCoins < cost) return
+        viewModelScope.launch {
+            val updatedCareer = when (type) {
+                "real_estate" -> career.copy(
+                    managerCoins = career.managerCoins - cost,
+                    reputation = (career.reputation + 10).coerceAtMost(100),
+                    playerRating = (career.playerRating + 1).coerceAtMost(99),
+                    playerSpeed = (career.playerSpeed + 1).coerceAtMost(99)
+                )
+                "sports_stocks" -> career.copy(
+                    managerCoins = career.managerCoins - cost,
+                    playerShooting = (career.playerShooting + 1).coerceAtMost(99),
+                    playerPassing = (career.playerPassing + 1).coerceAtMost(99)
+                )
+                "pr_campaign" -> career.copy(
+                    managerCoins = career.managerCoins - cost,
+                    reputation = (career.reputation + 15).coerceAtMost(100),
+                    playerRating = (career.playerRating + 1).coerceAtMost(99)
+                )
+                "custom_brand" -> career.copy(
+                    managerCoins = career.managerCoins - cost,
+                    reputation = (career.reputation + 25).coerceAtMost(100),
+                    playerRating = (career.playerRating + 2).coerceAtMost(99)
+                )
+                else -> career
+            }
+
+            repository.updateCareer(updatedCareer)
+
+            val notes = JournalEntity(
+                season = career.season,
+                week = career.week,
+                title = "Investment Made",
+                titleAr = "📈 استثمار مالي جديد للاعبنا!",
+                content = "Purchased $type.",
+                contentAr = "قرر لاعبنا المحترف استثمار راتبه وأمواله الكروية الخاصة في [ $nameAr ]. هذا القرار يمنحه حافزاً هائلاً ويرفع شعبيته ومستواه الفني العام!",
+                isAuto = false
+            )
+            repository.insertJournal(notes)
+            triggerTone("coin")
+        }
+    }
+
     fun selectPlayerForBid(player: PlayerEntity) {
         _activeBidPlayer.value = player
         _bidDialogState.value = BidState.None
@@ -456,18 +515,43 @@ class CareerViewModel(application: Application) : AndroidViewModel(application) 
             val playerVal = player.value
             val ratio = bidAmount.toDouble() / playerVal
 
-            if (ratio >= 0.95) {
-                // Success! Buy player directly
-                val success = repository.buyPlayerFromMarket(player.copy(value = bidAmount), uClub, career)
-                if (success) {
-                    _bidDialogState.value = BidState.Submitted(true, "تم قبول العرض والتعاقد بنجاح! اللاعب ${player.name} سعيد بالاتفاق المالي المبرم ويرتدي قميص ناديك رسمياً.")
-                    _userSquad.value = repository.getPlayersByClub(career.clubId)
+            val difficulty = career.difficulty ?: "Normal"
+            val requiredRatio = when (difficulty) {
+                "Easy" -> 0.85
+                "Hard" -> 1.10
+                else -> 0.95
+            }
+            val rivalChance = when (difficulty) {
+                "Easy" -> 0.15
+                "Hard" -> 0.65
+                else -> 0.40
+            }
+
+            if (ratio >= requiredRatio) {
+                val rivalEnters = Random.nextDouble() < rivalChance
+                if (rivalEnters) {
+                    val competitorName = listOf("بيراميدز 🔵", "الزمالك 🏹", "الأهلي 🔴🦅", "سيتي 🩵", "ريال مدريد 👑", "برشلونة 🔴🔵").random()
+                    val rivalOffer = (bidAmount * Random.nextDouble(1.05, 1.15)).toLong()
+                    val minRaise = (rivalOffer * 1.05).toLong()
+                    _bidDialogState.value = BidState.Submitted(
+                        isAccepted = false,
+                        messageAr = "⚠️ صراع في الميركاتو! تدخل نادي $competitorName في الصفقة براتب وعقد ضخم بقيمة $${rivalOffer / 1_000_000f}M! للفوز باللاعب وصعق المنافس، يتوجب عليك تقديم عرض مضاد لا يقل عن $${minRaise / 1_000_000f}M.",
+                        counterOffer = minRaise
+                    )
                 } else {
-                    _bidDialogState.value = BidState.Submitted(false, "عفواً، فشلت الصفقة لسبب فني طارئ.")
+                    // Success! Buy player directly
+                    val success = repository.buyPlayerFromMarket(player.copy(value = bidAmount), uClub, career)
+                    if (success) {
+                        _bidDialogState.value = BidState.Submitted(true, "تم قبول العرض والتعاقد بنجاح! اللاعب ${player.name} سعيد بالاتفاق المالي المبرم ويرتدي قميص ناديك رسمياً.")
+                        _userSquad.value = repository.getPlayersByClub(career.clubId)
+                    } else {
+                        _bidDialogState.value = BidState.Submitted(false, "عفواً، فشلت الصفقة لسبب فني طارئ.")
+                    }
                 }
-            } else if (ratio >= 0.75) {
+            } else if (ratio >= (requiredRatio - 0.20)) {
                 // Suggest counter-offer
-                val counter = (playerVal * Random.nextDouble(0.95, 1.05)).toLong()
+                val scale = if (difficulty == "Hard") 1.15 else 1.05
+                val counter = (playerVal * Random.nextDouble(0.95, scale)).toLong()
                 _bidDialogState.value = BidState.Submitted(false, "النادي البائع يقابل عرضك بالمفاوضة: يطلب النادي مبلغ $${counter / 1_000_000}M للموافقة الرسمية على الانتقال.", counter)
             } else {
                 // Rejected
@@ -943,7 +1027,8 @@ class CareerViewModel(application: Application) : AndroidViewModel(application) 
             if (career.scoutingMissionActive) {
                 val updatedWeeks = career.scoutingWeeksPassed + 1
                 if (updatedWeeks >= 1) {
-                    // Mission Finished! Find 3 wonderkids
+                    val isYouth = career.activeScoutingType == "YOUTH"
+                    // Mission Finished! Find 3 prospects
                     val discoveredPlayers = mutableListOf<PlayerEntity>()
                     val positions = if (career.scoutingMissionPosition.isEmpty() || career.scoutingMissionPosition == "ANY") {
                         listOf("GK", "DEF", "MID", "ATT")
@@ -956,11 +1041,16 @@ class CareerViewModel(application: Application) : AndroidViewModel(application) 
                     
                     for (i in 0 until 3) {
                         val chosenPos = positions.shuffled().first()
-                        val starRating = (career.scoutLevel * 6 + 55 + Random.nextInt(0, 8)).coerceIn(58, 88)
-                        val age = Random.nextInt(17, 20)
+                        val starRating = if (isYouth) {
+                            (career.scoutLevel * 5 + 40 + Random.nextInt(0, 8)).coerceIn(45, 82)
+                        } else {
+                            (career.scoutLevel * 6 + 55 + Random.nextInt(0, 8)).coerceIn(58, 88)
+                        }
+                        val age = if (isYouth) Random.nextInt(12, 18) else Random.nextInt(17, 20)
                         val value = repository.getPlayerValue(starRating, age, chosenPos)
                         
-                        val nameStr = "${firstNames.shuffled().first()} ${lastNames.shuffled().first()} (صيد الكشافة)"
+                        val suffix = if (isYouth) "(ناشئ الأكاديمية)" else "(صيد الكشافة)"
+                        val nameStr = "${firstNames.shuffled().first()} ${lastNames.shuffled().first()} $suffix"
                         discoveredPlayers.add(
                             PlayerEntity(
                                 name = nameStr,
@@ -974,7 +1064,7 @@ class CareerViewModel(application: Application) : AndroidViewModel(application) 
                                 age = age,
                                 clubId = -2, // Scout recruit candidate
                                 value = value,
-                                wage = 8_000L,
+                                wage = if (isYouth) 1_000L else 8_000L,
                                 form = 7,
                                 energy = 100
                             )
@@ -1001,13 +1091,23 @@ class CareerViewModel(application: Application) : AndroidViewModel(application) 
                     repository.updateCareer(finishedCareer)
 
                     // News alerts
-                    val scoutAlert = NewsEntity(
-                        title = "Scout Dispatch Finished",
-                        titleAr = "تقرير كشافة النادي جاهز! 🕵️‍♂️",
-                        content = "Scout returned with prospective stars.",
-                        contentAr = "عاد المندوب الكروي بقائمة استطلاع حصرية من (3) مواهب شابة Wonderkids تناسب احتياجات الفريق بأسعار تصفية مغرية. تصفح صفحة الكشافة لاستعراضهم والتعاقد معهم الآن!",
-                        type = "Board"
-                    )
+                    val scoutAlert = if (isYouth) {
+                        NewsEntity(
+                            title = "Youth Scout Dispatch Finished",
+                            titleAr = "وصول كشافة أكاديمية البراعم! 🕵️‍♂️👶",
+                            content = "Scout returned with prospective academy stars.",
+                            contentAr = "عاد طاقم الكشافة بنجاح ومعه (3) براعم ومواهب صغيرة (أعمار 12-17 سنة) برؤية فنية جذابة! افتح صفحة الكشافة الآن لاستعراضهم وضمهم فوراً للأكاديمية والبدء بتدريبهم وتأهيلهم لمستقبل واعد!",
+                            type = "Board"
+                        )
+                    } else {
+                        NewsEntity(
+                            title = "Scout Dispatch Finished",
+                            titleAr = "تقرير كشافة النادي جاهز! 🕵️‍♂️💎",
+                            content = "Scout returned with prospective stars.",
+                            contentAr = "عاد المندوب الكروي بقائمة استطلاع حصرية من (3) مواهب شابة Wonderkids تناسب احتياجات الفريق بأسعار تصفية مغرية. تصفح صفحة الكشافة لاستعراضهم والتعاقد معهم الآن!",
+                            type = "Board"
+                        )
+                    }
                     repository.insertNews(scoutAlert)
                 } else {
                     repository.updateCareer(career.copy(scoutingWeeksPassed = updatedWeeks))
@@ -1142,10 +1242,27 @@ class CareerViewModel(application: Application) : AndroidViewModel(application) 
 
             // 4. Increment week index or end season
             if (career.week < 10) {
-                val updatedCareer = career.copy(
-                    week = career.week + 1,
-                    budget = career.budget + sponsorIncome
-                )
+                val updatedCareer = if (career.careerMode == "Player") {
+                    val wageCoins = 6
+                    val wageAlert = NewsEntity(
+                        title = "Weekly Salary Deposited",
+                        titleAr = "💰 إيداع راتب اللاعب الأسبوعي!",
+                        content = "Your weekly salary of 6 coins has been deposited.",
+                        contentAr = "تهانينا! تم إيداع راتبك الاحترافي الأسبوعي بقيمة 6 عملات ذهبية (Coins) في محفظتك الكروية الخاصة بموجب العقد الحالي ومستواك الفني المرتفع.",
+                        type = "Board"
+                    )
+                    repository.insertNews(wageAlert)
+                    career.copy(
+                        week = career.week + 1,
+                        budget = career.budget + sponsorIncome,
+                        managerCoins = career.managerCoins + wageCoins
+                    )
+                } else {
+                    career.copy(
+                        week = career.week + 1,
+                        budget = career.budget + sponsorIncome
+                    )
+                }
                 repository.updateCareer(updatedCareer)
             } else {
                 // End of season! Reset week stats, increase season rating, pay prize money
@@ -1163,6 +1280,9 @@ class CareerViewModel(application: Application) : AndroidViewModel(application) 
                     repository.updateClub(updatedC)
                 }
 
+                // Call our centralized Ballon d'Or & seasonal awards helper method!
+                awardIndividualSeasonPrizes(career, rank, uClub)
+
                 val updatedCareer = career.copy(
                     week = 1,
                     season = career.season + 1,
@@ -1173,13 +1293,16 @@ class CareerViewModel(application: Application) : AndroidViewModel(application) 
                 // Add championship news
                 val championshipNews = NewsEntity(
                     title = "Season ${career.season} Concluded!",
-                    titleAr = "انتهى الموسم رقم ${career.season}!",
+                    titleAr = "انتهى الموسم رقم ${career.season}! 🏆🏁",
                     content = "The season has officially finished. Your club finished in Rank #$rank! You have received a massive cash payout of $${userPrize / 1_000_000}M for recruitment.",
-                    contentAr = "انتهى الموسم الكروي رسمياً. حقق فريقك المركز #$rank في الترتيب العام! حصل النادي على تمويل إضافي بقيمة $${userPrize / 1_000_000} مليون دولار للتطوير.",
+                    contentAr = "انتهى الموسم الكروي رقم ${career.season} رسمياً. حقق فريقك المركز #$rank في الترتيب العام! حصل النادي على تمويل إضافي بقيمة $${userPrize / 1_000_000} مليون دولار للتطوير والاستعداد للموسم القادم.",
                     type = "Board"
                 )
                 repository.insertNews(championshipNews)
             }
+
+            // Trigger potential international coaching job offers organically!
+            triggerNationalTeamJobOffers()
 
             // Sync players
             _userSquad.value = repository.getPlayersByClub(career.clubId)
@@ -1301,6 +1424,9 @@ class CareerViewModel(application: Application) : AndroidViewModel(application) 
                             repository.updateClub(updatedC)
                         }
 
+                        // Call Ballon d'Or helper
+                        awardIndividualSeasonPrizes(career, rank, uClub)
+
                         val updatedCareer = career.copy(
                             week = 1,
                             season = career.season + 1,
@@ -1311,9 +1437,9 @@ class CareerViewModel(application: Application) : AndroidViewModel(application) 
                         // Add championship news
                         val championshipNews = NewsEntity(
                             title = "Season ${career.season} Concluded (Simulated)!",
-                            titleAr = "انتهى الموسم رقم ${career.season} (تخطي الموسم)! 🏁",
+                            titleAr = "انتهى الموسم رقم ${career.season} (تخطي الموسم)! 🏁🏆",
                             content = "The season has officially finished. Your club finished in Rank #$rank! You have received a payout of $${userPrize / 1_000_000}M.",
-                            contentAr = "انتهى الموسم الكروي بالكامل عبر المحاكاة السريعة. حقق فريقك المركز #$rank في الترتيب العام للدوري الممتاز! حصل النادي على ميزانية إضافية قيمتها $${userPrize / 1_000_000} مليون دولار للتطوير والاستعداد للموسم الجديد.",
+                            contentAr = "انتهى الموسم الكروي بالكامل عبر المحاكاة السريعة. حقق فريقك المركز #$rank في الترتيب العام للدوري الممتاز! حصل النادي على ميزانية إضافية قيمتها $${userPrize / 1_000_000} مليون دولار للتطوير والاستعداد للموسم الجديد واللعب الدولي!",
                             type = "Board"
                         )
                         repository.insertNews(championshipNews)
@@ -1656,14 +1782,18 @@ class CareerViewModel(application: Application) : AndroidViewModel(application) 
                 // Chance to trigger highlight events
                 val rand = Random.nextDouble()
                 if (rand < 0.45 && matchTime < 90) {
-                    // Ultra-offensive increases opp attack frequency slightly
-                    val oppAttackBias = if (newTactic == "Ultra-Offensive") 0.60 else 0.45
-                    val isUserAttack = Random.nextDouble() > oppAttackBias
-
-                    val event = if (isUserAttack) {
-                        generateUserAttackEvent(squad, oppSquad)
+                    // Let's check for a 12% probability of a VAR Review event!
+                    val isVarReview = Random.nextDouble() < 0.12 && matchTime > 20
+                    val event = if (isVarReview) {
+                        generateVarDecisionEvent()
                     } else {
-                        generateOpponentAttackEvent(squad, oppSquad)
+                        val oppAttackBias = if (newTactic == "Ultra-Offensive") 0.60 else 0.45
+                        val isUserAttack = Random.nextDouble() > oppAttackBias
+                        if (isUserAttack) {
+                            generateUserAttackEvent(squad, oppSquad)
+                        } else {
+                            generateOpponentAttackEvent(squad, oppSquad)
+                        }
                     }
 
                     _matchState.value = MatchPlayState.Simulating(
@@ -1695,6 +1825,40 @@ class CareerViewModel(application: Application) : AndroidViewModel(application) 
             // Finish match
             finishInteractiveMatch()
         }
+    }
+
+    private fun generateVarDecisionEvent(): MatchEvent {
+        val scenarios = listOf(
+            Triple("PenCheck", "لقطة مشبوهة داخل منطقة الجزاء! الحكم يوقف اللعب ويتجه لشاشة الـ VAR لمراجعة ركلة جزاء محتملة لصالحنا! 🖥️⚽", "Ref reviewing possible penalty in our favor via VAR!"),
+            Triple("GoalCheck", "هددددـ... لحظة! الحكم يرفع يده ويشير بمراجعة ملف الفار لاحتمالية وجود تسلل أو لمسة يد ضد مهاجمنا يسبق الهدف المثير! 🖥️❌", "Ref reviewing our last goal for offside via VAR!"),
+            Triple("RedCheck", "تداخل قوي للغاية! الحكم يشهر البطاقة الصفراء لكن سماعة الأذن تناديه... مراجعة فوت دقيقة لاحتمالية طرد مباشر ومخالفة خطيرة ضد لاعبنا! 🖥️🟥", "Ref reviewing potential Red Card for our defender via VAR!")
+        ).random()
+
+        val options = listOf(
+            MatchOption(
+                id = "var_${scenarios.first}",
+                label = "متابعة قرار حكم الفيديو (VAR) 🖥️",
+                labelAr = "Await VAR Verdict",
+                successChance = when (scenarios.first) {
+                    "PenCheck" -> 55 // 55% chance to get the penalty
+                    "GoalCheck" -> 45 // 45% chance our goal is confirmed/allowed
+                    else -> 60 // 60% chance to escape the red card (keep yellow)
+                },
+                costEnergy = 0
+            )
+        )
+
+        return MatchEvent(
+            minute = matchTime,
+            type = EventType.VAR_REVIEW,
+            description = scenarios.third,
+            descriptionAr = scenarios.second,
+            activePlayer = null,
+            opponentPlayer = null,
+            options = options,
+            pitchBallX = 0.5f,
+            pitchBallY = 0.5f
+        )
     }
 
     // Generate offensive event for user squad with dynamic tactical counter-impacts
@@ -1803,13 +1967,71 @@ class CareerViewModel(application: Application) : AndroidViewModel(application) 
         // Chemistry impact on option success: high chemistry grants up to +6%, poor synergy penalizes up to -10%
         val chemValue = teamChemistry.value
         val chemBonus = ((chemValue - 70) / 5).coerceIn(-10, 6)
-        val success = rnd < (option.successChance + chemBonus)
+
+        val career = careerState.value
+        val difficulty = career?.difficulty ?: "Normal"
+        // Easy mode adds +12% success, Hard mode subtracts -12% success!
+        val difficultyModifier = when (difficulty) {
+            "Easy" -> 12
+            "Hard" -> -12
+            else -> 0
+        }
+
+        val success = rnd < (option.successChance + chemBonus + difficultyModifier)
         val isUserAttack = event.type == EventType.USER_ATTACK
 
         val details: String
         val detailsAr: String
 
-        if (isUserAttack) {
+        if (event.type == EventType.VAR_REVIEW) {
+            val decisionType = option.id.removePrefix("var_")
+            if (success) {
+                when (decisionType) {
+                    "PenCheck" -> {
+                        homeGoals++
+                        details = "VAR verdict: PENALTY ALLOWED! Target converted beautifully."
+                        detailsAr = "🖥️ قرار الـ VAR: ركككلة جزززاء صحيحة! انبرى لها مهاجمنا وأسكنها الشباك بنجاح محرزاً هدفاً غالياً!"
+                        logs.add("⚽ ${matchTime}' دقيقة - ضربة جزاء صحيحة يحتسبها الفار ونسجلها بنجاح!")
+                    }
+                    "GoalCheck" -> {
+                        homeGoals++
+                        details = "VAR verdict: GOAL VALID! No offside found."
+                        detailsAr = "🖥️ قرار الـ VAR: الهدف شررعي تماماً! لا يوجد تسلل، والحكم يثبت الهدف بعد مراجعة شاقة."
+                        logs.add("⚽ ${matchTime}' دقيقة - الفار يؤكد صحة الهدف الذي أحرزناه!")
+                    }
+                    else -> { // RedCheck
+                        details = "VAR verdict: Decision stands. Yellow card, no red."
+                        detailsAr = "🖥️ قرار الـ VAR: تداخل سليم وبطاقة صفراء فقط! ينجو مدافعنا من الطرد المباشر بسلام."
+                        logs.add("🟨 ${matchTime}' دقيقة - الفار يقنع الحكم بالإبقاء على البطاقة الصفراء دون طرد.")
+                    }
+                }
+            } else {
+                when (decisionType) {
+                    "PenCheck" -> {
+                        details = "VAR verdict: Penalty denied. No infraction."
+                        detailsAr = "🖥️ قرار الـ VAR: لا وجود لركلة جزاء! يطلب الحكم استئناف اللعب وسط احتجاجات دافئة."
+                        logs.add("🖥️ ${matchTime}' دقيقة - قرار الفار يؤكد عدم وجود عرقلة، ولا ركلة جزاء.")
+                    }
+                    "GoalCheck" -> {
+                        details = "VAR verdict: GOAL CANCELLED! Offside committed."
+                        detailsAr = "🖥️ قرار الـ VAR: إلغاء الهدف للأسف! تسلل واضح سنتمترات قليلة يحرمنا من التقدم."
+                        logs.add("❌ ${matchTime}' دقيقة - الفار يلغي جول ناديك بداعي التسلل.")
+                    }
+                    else -> { // RedCheck
+                        details = "VAR verdict: DIRECT RED CARD! Player dismissed."
+                        detailsAr = "🖥️ قرار الـ VAR: بطاقة حمراء مباشرة! يرفع الحكم الكارت الأحمر ويطرد مدافعنا خارج الميدان!"
+                        logs.add("🟥 ${matchTime}' دقيقة - كارت أحمر مباشر لمدافعنا بعد تدخل متهور يثبته الفار.")
+                        val squad = _userSquad.value
+                        val def = squad.firstOrNull { it.position == "DEF" }
+                        if (def != null) {
+                            viewModelScope.launch {
+                                repository.updatePlayer(def.copy(energy = 0))
+                            }
+                        }
+                    }
+                }
+            }
+        } else if (isUserAttack) {
             if (success) {
                 homeGoals++
                 details = "GOAL! Absolute beauty! Choice [${option.labelAr}] was clean, and ${event.activePlayer?.name} scored!"
@@ -2130,7 +2352,7 @@ class CareerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     // Launch Scouting Mission
-    fun launchScoutMission(position: String) {
+    fun launchScoutMission(position: String, type: String = "SENIOR") {
         val career = careerState.value ?: return
         if (career.scoutingMissionActive) return
         val missionFee = 200_000L
@@ -2141,6 +2363,7 @@ class CareerViewModel(application: Application) : AndroidViewModel(application) 
                 budget = career.budget - missionFee,
                 scoutingMissionActive = true,
                 scoutingMissionPosition = position,
+                activeScoutingType = type,
                 scoutingWeeksPassed = 0
             )
             repository.updateCareer(updatedCareer)
@@ -2150,7 +2373,11 @@ class CareerViewModel(application: Application) : AndroidViewModel(application) 
                 title = "Scout Dispatched",
                 titleAr = "انطلاق بعثة الكشافة للتنقيب الميداني ✈️",
                 content = "Scout sent out inside global leagues.",
-                contentAr = "تم تفويض طاقم الاستكشاف بقيادة الكشاف برتبة ليفل (${career.scoutLevel}) بمهمة طيران رسمية للتفتيش عن صفقات Wonderkids بمركز [${position}] وتوفير قائمة بـ 3 ترشيحات جاهزة بحلول الأسبوع القادم في الدوري.",
+                contentAr = if (type == "YOUTH") {
+                    "تم توجيه بعثة الكشافة بقيادة الخبير برتبة ليفل (${career.scoutLevel}) للبحث عن فئة صغار ومواهب صاعدة (تحت الـ 17 سنة) لضمهم للأكاديمية والبراعم. سيصل التقرير الأسبوع القادم!"
+                } else {
+                    "تم تفويض طاقم الاستكشاف بقيادة الكشاف برتبة ليفل (${career.scoutLevel}) بمهمة طيران رسمية للتفتيش عن صفقات Wonderkids بمركز [${position}] وتوفير قائمة بـ 3 ترشيحات جاهزة بحلول الأسبوع القادم في الدوري."
+                },
                 type = "Board"
             )
             repository.insertNews(joinNews)
@@ -2380,6 +2607,261 @@ class CareerViewModel(application: Application) : AndroidViewModel(application) 
             triggerTone("click")
         }
     }
+
+    // Centralized Season Individual Awards & Ballon d'Or Ceremony Calculation
+    private suspend fun awardIndividualSeasonPrizes(career: CareerEntity, rank: Int, uClub: ClubEntity) {
+        val allPlayers = dao.getPlayersFlow().first()
+        val sortedClubs = repository.clubsFlow.first()
+            .sortedWith(compareByDescending<ClubEntity> { it.points }.thenByDescending { it.goalsFor - it.goalsAgainst })
+        val champClub = sortedClubs.firstOrNull() ?: uClub
+
+        // 🏆 Top Scorer of Current League
+        val topScorerPlayer = allPlayers.maxByOrNull { it.goals }
+        val topScorerName = topScorerPlayer?.name ?: "زيزو (أحمد سيد)"
+        val tsGoals = (topScorerPlayer?.goals ?: Random.nextInt(6, 14)).coerceAtLeast(6)
+
+        // 👑 Ballon d'Or (الكرة الذهبية)
+        val ballonCandidates = allPlayers.filter { it.clubId > 0 }
+        val ballonWinnerPlayer = ballonCandidates.maxByOrNull { it.goals * 3 + it.assists * 2 + it.rating }
+        val bWinnerName = ballonWinnerPlayer?.name ?: "Mohamed Salah"
+
+        // 🧤 Best Goalkeeper
+        val gkCandidates = allPlayers.filter { it.position == "GK" && it.clubId > 0 }
+        val bestGkPlayer = gkCandidates.maxByOrNull { it.goalkeeper + Random.nextInt(0, 15) }
+        val bestGkName = bestGkPlayer?.name ?: "Yassine Bounou"
+
+        // Save History record
+        val record = RecordEntity(
+            season = career.season,
+            championTeam = champClub.name,
+            championTeamAr = champClub.nameAr,
+            topScorer = topScorerName,
+            topScorerAr = topScorerName,
+            topScorerGoals = tsGoals,
+            ballonDorWinner = bWinnerName,
+            ballonDorWinnerAr = bWinnerName,
+            bestGoalkeeper = bestGkName,
+            bestGoalkeeperAr = bestGkName
+        )
+        repository.insertRecord(record)
+
+        // Publish news post in inbox
+        val awardsNews = NewsEntity(
+            title = "Season Individual Awards & Ballon d'Or 🏆",
+            titleAr = "حفل توزيع الجوائز الفردية السنوي والكرة الذهبية! 🏆⭐",
+            content = "The Ballon d'Or has been awarded to $bWinnerName! Best Goalkeeper awarded to $bestGkName.",
+            contentAr = "أقامت الأمانة الفنية للاتحاد الكروي حفلها الختامي الكبير لتوزيع الجوائز الفردية لأداء الموسم المنصرم:\n\n" +
+                      "🏆 جائزة الكرة الذهبية (الكرة الذهبية) لأفضل لاعب في العام 👑: فاز بها الرسام الاستثنائي [ $bWinnerName ] بعد تقديم عروض ممتعة خارقة للعادة سحرت الجماهير!\n\n" +
+                      "🧤 جائزة أفضل حارس مرمى بالدوري: توج بها الأخطبوط العملاق [ $bestGkName ] لبسالته الذاتية وتصدياته الأسطورية!\n\n" +
+                      "⚽ الحذاء الذهبي لهداف الموسم: حصدها المهاجم الكاسح [ $topScorerName ] برصيد $tsGoals أهداف طوال جولات البطولة!",
+            type = "Board"
+        )
+        repository.insertNews(awardsNews)
+
+        // Reset player statistics for next season
+        for (p in allPlayers) {
+            repository.updatePlayer(p.copy(goals = 0, assists = 0))
+        }
+    }
+
+    // Accept discovered teenager into Youth Academy (clubId = -10)
+    fun signToYouthAcademy(prodigy: PlayerEntity) {
+        val career = careerState.value ?: return
+        viewModelScope.launch {
+            val signed = prodigy.copy(
+                clubId = -10, // Roster inside Youth Academy
+                onTransferList = false
+            )
+            repository.updatePlayer(signed)
+
+            val news = NewsEntity(
+                title = "Youngster Joins Academy",
+                titleAr = "ضم الموهوب الصاعد لأكاديمية النادي! 👶🎓",
+                content = "Signed youth prodigy to academy.",
+                contentAr = "تم بنجاح توقيع عقد رعاية مع الموهبة الصاعدة [ ${prodigy.name} ] بمركز [ ${prodigy.position} ] وبرأس مال واعد لخطط التطوير وعمره الحالي ${prodigy.age} عاماً فقط للانتقال الفوري إلى أكاديمية الشباب بنادينا!",
+                type = "Board"
+            )
+            repository.insertNews(news)
+        }
+    }
+
+    // Train Youth Academy Player (OVR +2 performance boosts)
+    fun trainAcademyYouth(player: PlayerEntity) {
+        val career = careerState.value ?: return
+        val trainingFee = 150_000L
+        if (career.budget < trainingFee) {
+            _bidDialogState.value = BidState.Submitted(false, "عفواً، ميزانية النادي لا تكفي لتمويل كلفة تدريب وتأهيل هذا الناشئ بالكامل ($150k).")
+            return
+        }
+        viewModelScope.launch {
+            val upgraded = player.copy(
+                rating = (player.rating + 2).coerceAtMost(92),
+                shooting = if (player.position == "ATT") player.shooting + 3 else player.shooting + 1,
+                passing = if (player.position == "MID") player.passing + 3 else player.passing + 1,
+                speed = player.speed + 2,
+                defending = if (player.position == "DEF") player.defending + 3 else player.defending + 1,
+                goalkeeper = if (player.position == "GK") player.goalkeeper + 3 else player.goalkeeper + 1,
+                value = repository.getPlayerValue(player.rating + 2, player.age, player.position)
+            )
+            repository.updatePlayer(upgraded)
+
+            val updatedCareer = career.copy(budget = career.budget - trainingFee)
+            repository.updateCareer(updatedCareer)
+
+            val news = NewsEntity(
+                title = "Youth Talent Trained",
+                titleAr = "تطوير مهارات برعم الأكاديمية! ⚡️🌱",
+                content = "Academy youngster trained up.",
+                contentAr = "استثمر النادي بموافقتك مبلغ $150K لتخصيص كورس تدريب رياضي عالي المستوى للبرعم الصاعد [ ${player.name} ]. وبناء على التقرير الفني المرتفع، تحسم نجوميته OVR لتتعزز بمقدار (+2) صعوداً إلى [ ${upgraded.rating} OVR ]!",
+                type = "Board"
+            )
+            repository.insertNews(news)
+        }
+    }
+
+    // Promote Academy Youth Player to First Team
+    fun promoteAcademyYouthToFirstTeam(player: PlayerEntity) {
+        val career = careerState.value ?: return
+        val uClub = userClub.value ?: return
+        if (player.age < 16) {
+            _bidDialogState.value = BidState.Submitted(false, "عفواً، تنص لوائح الفيفا على عدم السماح بتسجيل وتصعيد اللاعبين بالفريق الأول المعتمد قبل سن الـ 16 عاماً!")
+            return
+        }
+        viewModelScope.launch {
+            val promoted = player.copy(
+                clubId = uClub.id,
+                wage = 6_000L
+            )
+            repository.updatePlayer(promoted)
+
+            // Refresh user squad
+            _userSquad.value = repository.getPlayersByClub(uClub.id)
+
+            val news = NewsEntity(
+                title = "Youth Promoted to Senior",
+                titleAr = "تصعيد برعم الأكاديمية للفريق الأول رسمياً! 🎖️",
+                content = "Academy youngster promoted to squad.",
+                contentAr = "مبارك! رأى الكشافة نضجاً مبهراً في الموهبة الواعدة [ ${player.name} ] (سن ${player.age} عاماً) فتم تصعيده وتوقيع عقده المهني رسمياً بالفريق الأول كروياً للدفاع عن قميص النادي في الدوري الممتاز!",
+                type = "Board"
+            )
+            repository.insertNews(news)
+        }
+    }
+
+    // Trigger National Team Job Offers
+    fun triggerNationalTeamJobOffers() {
+        val career = careerState.value ?: return
+        if (career.reputation < 60 || career.hasNationalJob) return
+
+        // 40% chance of receiving a national job offer on advanced weeks
+        if (Random.nextDouble() < 0.40) {
+            val potentialNations = listOf(
+                Pair(101, "السعودية 🇸🇦"),
+                Pair(102, "مصر 🇪🇬"),
+                Pair(103, "فرنسا 🇫🇷"),
+                Pair(104, "إنجلترا 🏴󠁧󠁢󠁥󠁮󠁧󠁿"),
+                Pair(105, "الأرجنتين 🇦🇷"),
+                Pair(106, "البرازيل 🇧🇷"),
+                Pair(107, "إسبانيا 🇪🇸"),
+                Pair(108, "ألمانيا 🇩🇪")
+            ).shuffled()
+
+            val selectedNation = potentialNations.first()
+            val nationId = selectedNation.first
+            val nationNameAr = selectedNation.second
+
+            viewModelScope.launch {
+                val offerNews = NewsEntity(
+                    title = "National Team Job Offer",
+                    titleAr = "عرض تدريب دولي مغري للتعاقد الفوري! 🗺️🇸🇦",
+                    content = "Job offered from national team of $nationNameAr.",
+                    contentAr = "تنويهاً لسمعتكم الفذة وقدرتكم القيادية الاستثنائية التي خطفت تطلعات الاتحاد الرياضي، يسرنا تقديم هذا العقد المبرم لتولي مهمة القيادة الفنية لمنتخب [ $nationNameAr ] لمباشرة المباريات الدولية الودية والقارية الحاشدة!\n\n" +
+                              "اقبل العقد من القائمة الوطنية بالمقر لتصبح مدرباً دولياً رسمياً ترفع رايات الكرويين!",
+                    type = "Board"
+                )
+                repository.insertNews(offerNews)
+            }
+        }
+    }
+
+    // Accept National Team coaching position
+    fun acceptNationalJob(nationalClubId: Int) {
+        val career = careerState.value ?: return
+        viewModelScope.launch {
+            val updatedCareer = career.copy(
+                nationalTeamId = nationalClubId,
+                hasNationalJob = true
+            )
+            repository.updateCareer(updatedCareer)
+
+            val nationNameAr = when (nationalClubId) {
+                101 -> "السعودية 🇸🇦"
+                102 -> "مصر 🇪🇬"
+                103 -> "فرنسا 🇫🇷"
+                104 -> "إنجلترا 🏴󠁧󠁢󠁥󠁮󠁧󠁿"
+                105 -> "الأرجنتين 🇦🇷"
+                106 -> "البرازيل 🇧🇷"
+                107 -> "إسبانيا 🇪🇸"
+                108 -> "ألمانيا 🇩🇪"
+                else -> "المنتخب"
+            }
+
+            val news = NewsEntity(
+                title = "National Team Coach Appointed",
+                titleAr = "توقيع الميثاق الكروي وتدريب منتخب [$nationNameAr]! 🤝",
+                content = "You are now managing $nationNameAr.",
+                contentAr = "تم توقيع العرائض رسمياً! المدير الفني يحمل الآن علم وتطلعات منتخب [ $nationNameAr ] كمدرب دولي معتمد بجانب قيادته لناديه المحلي لتدشين مسيرة مونديالية تاريخية!",
+                type = "Board"
+            )
+            repository.insertNews(news)
+        }
+    }
+
+    // Resign from National Team
+    fun resignFromNationalJob() {
+        val career = careerState.value ?: return
+        if (!career.hasNationalJob) return
+        viewModelScope.launch {
+            val updatedCareer = career.copy(
+                nationalTeamId = 0,
+                hasNationalJob = false
+            )
+            repository.updateCareer(updatedCareer)
+
+            val news = NewsEntity(
+                title = "Resigned national job",
+                titleAr = "الاستقالة رسمياً من مهام المنتخب الوطني! 🪪",
+                content = "Resigned coaching position.",
+                contentAr = "أعلن المدير الفني تقديم ورقة استقالته رسمياً تامة من القيادة الفنية للمنتخب الوطني متمنياً للكتيبة كل السداد بالمنافسات الدولية، والتفرغ التام لإجراءات وترتيبات ناديه المحلي.",
+                type = "Board"
+            )
+            repository.insertNews(news)
+        }
+    }
+
+    // Update Game Difficulty (Easy, Normal, Hard)
+    fun updateDifficulty(level: String) {
+        val career = careerState.value ?: return
+        viewModelScope.launch {
+            val updatedCareer = career.copy(difficulty = level)
+            repository.updateCareer(updatedCareer)
+
+            val levelAr = when (level) {
+                "Easy" -> "سهل (Easy) 🟢 - فرصة نجاح متزايدة بالمباريات وتنزيلات في الميركاتو!"
+                "Hard" -> "صعب (Hard) 🔴 - تحدي تكتيكي شرس لقرارات اللعب ومبالغ إضافية لصفقات الميركاتو!"
+                else -> "متوسط (Normal) 🟡 - توازن يحاكي مبادئ المانجر الواقعي لضمان متعة متكاملة!"
+            }
+
+            val news = NewsEntity(
+                title = "Difficulty Changed",
+                titleAr = "تعديل مستوى الصعوبة تكتيكياً باللعبة! ⚙️",
+                content = "Game difficulty changed to $level.",
+                contentAr = "بناء على اختياراتكم، تم تعديل درجة تحدي ومنافسات اللعبة لتكون [$levelAr]. سيؤثر ذلك فوراً على نسب النجاح في اتجاه خيارات الهجوم/الدفاع بالمطابقات، ومفاوضات الانتقالات!",
+                type = "Board"
+            )
+            repository.insertNews(news)
+        }
+    }
 }
 
 // Custom UI Match classes
@@ -2422,6 +2904,7 @@ data class MatchOption(
 enum class EventType {
     USER_ATTACK,
     OPPONENT_ATTACK,
-    NEUTRAL
+    NEUTRAL,
+    VAR_REVIEW
 }
 

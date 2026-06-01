@@ -23,7 +23,7 @@ data class CareerEntity(
     val playerDefending: Int = 40,
     val selectedLeagueCode: String = "SPL", // "SPL", "EPL", "LAL", "SER", "BUN", "FRA"
     val academyLevel: Int = 1, // Youth Academy tier (1 to 5)
-    val scoutLevel: Int = 1, // Hired scout quality tier (1 to 3)
+    val scoutLevel: Int = 1, // Hired scout quality tier (1 to 5)
     val scoutingMissionActive: Boolean = false, // Current Active status
     val scoutingMissionPosition: String = "", // Target scouting position
     val scoutingWeeksPassed: Int = 0, // Counting duration of Scouting
@@ -43,7 +43,10 @@ data class CareerEntity(
     val dailyTask3Progress: Int = 0, // Buy or Sell Player (0/1)
     val dailyTask3Max: Int = 1,
     val dailyTask3Completed: Boolean = false,
-    val dailyTask3Claimed: Boolean = false
+    val dailyTask3Claimed: Boolean = false,
+    val nationalTeamId: Int = 0, // 0 if none, else codes 101 to 108 representing Saudi Arabia, Egypt, France, England etc.
+    val hasNationalJob: Boolean = false,
+    val activeScoutingType: String = "SENIOR" // "SENIOR" (discover wonderkids) vs "YOUTH" (discover 12-17 year olds for Academy)
 )
 
 @Entity(tableName = "clubs")
@@ -94,7 +97,12 @@ data class PlayerEntity(
     val isOnLoan: Boolean = false,
     val loanWeeksLeft: Int = 0,
     val originalClubId: Int = 0,
-    val onLoanList: Boolean = false
+    val onLoanList: Boolean = false,
+    val potential: Int = 80,
+    val parentClubId: Int = 0,
+    val sellOnClausePercent: Int = 0,
+    val loanOptionBuyPrice: Long = 0L,
+    val hasLoanOptionToBuy: Boolean = false
 )
 
 @Entity(tableName = "fixtures")
@@ -132,4 +140,19 @@ data class JournalEntity(
     val contentAr: String,
     val timestamp: Long = System.currentTimeMillis(),
     val isAuto: Boolean = true // auto-generated vs manager manual diary
+)
+
+@Entity(tableName = "history_records")
+data class RecordEntity(
+    @PrimaryKey(autoGenerate = true) val id: Int = 0,
+    val season: Int,
+    val championTeam: String,
+    val championTeamAr: String,
+    val topScorer: String,
+    val topScorerAr: String,
+    val topScorerGoals: Int,
+    val ballonDorWinner: String = "Mohamed Salah",
+    val ballonDorWinnerAr: String = "محمد صلاح",
+    val bestGoalkeeper: String = "Yassine Bounou",
+    val bestGoalkeeperAr: String = "ياسين بونو"
 )
